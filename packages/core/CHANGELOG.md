@@ -1,5 +1,38 @@
 # @docx-editor.dev/core
 
+## 2.40.0
+
+### Minor Changes
+
+- 8621cd0: Support copy, cut, and paste of a selected picture, shape, line, text box, or group. Fixes #2058
+- f5cc27d: The React and Vue editors show the translated reason when they refuse to copy, cut, or paste on a selected drawing, in the same dialog as a refused picture insert. The `imageInsertError` dialog takes an optional `title` that names the refused action. Fixes #2087
+
+### Patch Changes
+
+- 35a29d6: Accepting all changes in a document that holds formatting changes with no effect lays out only the paragraphs that changed. A formatting change that has no review card no longer keeps a change bar after an edit in another paragraph.
+- 42a0d83: Pasting an image file while a drawing is selected inserts it as an inline picture before the selected drawing's anchor. In suggesting mode, the editor refuses that paste and shows the reason, and the stale insert-target reasons no longer mention a drop. Fixes #2074
+- b89bc8d: Large documents open faster because layout no longer repeats work for unchanged paragraphs on each pass.
+- 43af190: Compress East Asian punctuation to fit justified lines in highlighted or shaded text.
+- 5ad4c78: Fit East Asian punctuation on justified lines that also hold symbols such as `℃`, `‰`, or `①`, or Latin text with accents or symbols. These characters keep their widths.
+- 69681df: Fit East Asian punctuation on lines with authored character spacing when the paragraph's Latin text is on other lines.
+- 7ac99bc: With punctuation compression, a line-end mark that overflows by no more than its blank sides now hangs only its trailing blank side, and the text before it fills the rest of the line.
+- d7bed3e: Field results take automatic East Asian spacing and balanced space widths like other text, for every field type, simple fields, and results that continue into the next paragraph. Auto-fit tables count the same spacing.
+- 2dd1059: Apply the run's baseline position to inline drawings. Size and position the full drawing line when it snaps to a section line grid.
+- 87ca31c: Fill text highlight and character shading over the full content band of lines that hold an inline picture, and over the full line box of lines with exact spacing, in the editor and in PDF export.
+- 2b88531: Tab between table cells and typing in long documents with many tracked changes respond faster.
+- 0bbc19a: Keep a hyphen with the word after it in legacy compatibility modes when the document compresses punctuation, in paragraphs and in autofit table column widths. Autofit column widths also keep a dash that ends a run with the next run when line breaking does.
+- 81da352: Keep the legacy table alignment when row property exceptions (`w:tblPrEx`) repeat the table's own properties, or when a tracked row property change records different earlier properties.
+- f96c7b0: Display the cached preview of an embedded object that carries refresh-lock metadata, of a picture-form embedded object with field codes, and of a legacy picture whose disabled outline names a join style.
+- aa385fa: Fill the automatic space between East Asian text and Latin letters or digits with the highlight or shading of the text before it, on screen and in PDF export.
+- 90449d6: While a drawing is selected, a paste or an inserted picture goes in before the drawing's anchor, and text pasted on a selected text box replaces its text. Text pasted on a shape with no text body, and pasted content that holds a picture on a text box, refuse with a reason. Fixes #2076
+- eb1ed9f: A full layout pass over unchanged content does less work in long documents, so the editor stays more responsive after a large document opens.
+- 6f2b784: Adjacent East Asian punctuation pairs share a half-cell bearing according to each mark's run language. This covers semicolons, colons, exclamation marks, and the katakana middle dot in Chinese and Japanese text.
+- cd76463: Row edits in a long table lay out only the pages from the edited row onward, so their cost follows the rows after the edit, not the whole table. Fixes #1797
+- f5cc27d: Typing in a table cell no longer gives a layout that differs from a fresh layout in rows that split across pages, exact-height rows that end a page, and merged cells in exact-height rows. Fixes #2086
+- b1415b9: A text line that only touches the top or bottom edge of a wrapped picture keeps its full width instead of wrapping around the picture.
+- b1415b9: Documents where each paragraph's last lines wrap the picture at the top of the next paragraph open in far fewer layout passes. Fixes #1803
+- Updated dependencies: @docx-editor.dev/i18n@2.40.0
+
 ## 2.39.0
 
 ### Minor Changes
