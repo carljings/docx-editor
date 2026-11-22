@@ -88,6 +88,7 @@ export interface ParagraphFormatUpdate {
   readonly indentLeftTwips?: number | null;
   readonly indentRightTwips?: number | null;
   readonly indentFirstLineTwips?: number | null;
+  readonly indentFirstLineChars?: number | null;
   readonly contextualSpacing?: boolean;
   readonly keepNext?: boolean;
   readonly keepLines?: boolean;

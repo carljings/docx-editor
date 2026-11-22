@@ -220,6 +220,9 @@ export function execEditorCommand(
         ...(command.indentFirstLineTwips !== undefined
           ? { indentFirstLineTwips: command.indentFirstLineTwips }
           : {}),
+        ...(command.indentFirstLineChars !== undefined
+          ? { indentFirstLineChars: command.indentFirstLineChars }
+          : {}),
         ...(command.contextualSpacing !== undefined
           ? { contextualSpacing: command.contextualSpacing }
           : {}),

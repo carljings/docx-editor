@@ -7,6 +7,7 @@
 // composition root.
 
 import type { TreeApplyResult, TreeDocxSessionView } from '@docx-editor.dev/core/binding';
+import { writeFirstLineChars } from './paragraph-format-indent.ts';
 import {
   findNode,
   type OoxmlElement,
@@ -732,7 +733,8 @@ export function createSurfaceStructure(deps: SurfaceStructureDeps): StructureMet
       const wantsIndent =
         update.indentLeftTwips !== undefined ||
         update.indentRightTwips !== undefined ||
-        update.indentFirstLineTwips !== undefined;
+        update.indentFirstLineTwips !== undefined ||
+        update.indentFirstLineChars !== undefined;
       if (entries.length === 0 && !wantsIndent && !wantsTabStops) return false;
 
       const ops: TreeDocOp[] = [];
@@ -752,7 +754,13 @@ export function createSurfaceStructure(deps: SurfaceStructureDeps): StructureMet
           if (update.indentRightTwips !== undefined) {
             attributes = writeIndentSide(attributes, 'right', 'end', update.indentRightTwips);
           }
-          if (update.indentFirstLineTwips !== undefined) {
+          if (update.indentFirstLineChars !== undefined) {
+            attributes = writeFirstLineChars(
+              attributes,
+              update.indentFirstLineChars,
+              update.indentFirstLineTwips
+            );
+          } else if (update.indentFirstLineTwips !== undefined) {
             attributes = writeFirstLine(attributes, update.indentFirstLineTwips);
           }
           properties = mergedProperties(properties, {

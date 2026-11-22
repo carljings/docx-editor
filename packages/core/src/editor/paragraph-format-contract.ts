@@ -39,6 +39,8 @@ export interface SurfaceParagraphFormat {
   readonly indentRightTwips?: number | null;
   /** ONE signed first-line offset: negative is a hanging indent (§17.3.1.12). */
   readonly indentFirstLineTwips?: number | null;
+  /** Signed first-line indent in hundredths of a character (`w:firstLineChars` / `w:hangingChars`). */
+  readonly indentFirstLineChars?: number | null;
   readonly contextualSpacing?: boolean;
   readonly keepNext?: boolean;
   readonly keepLines?: boolean;

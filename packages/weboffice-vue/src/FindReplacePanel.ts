@@ -46,11 +46,33 @@ export const FindReplacePanel = defineComponent({
       highlight: props.open ? 'all' : 'none',
     }));
 
+    const panelRef = ref<HTMLElement | null>(null);
     const findInputRef = ref<HTMLInputElement | null>(null);
     const replaceInputRef = ref<HTMLInputElement | null>(null);
+    const isComposing = ref(false);
     const replaceText = ref('');
     const notice = ref('');
     const noticeKind = ref<'info' | 'error'>('info');
+
+    function isImeEvent(event: KeyboardEvent): boolean {
+      return (
+        isComposing.value || event.isComposing || event.keyCode === 229 || event.key === 'Process'
+      );
+    }
+
+    function keepPanelFocusIfDisabled() {
+      void nextTick(() => {
+        const active = document.activeElement;
+        if (
+          !active ||
+          active === document.body ||
+          !panelRef.value?.contains(active) ||
+          (active instanceof HTMLButtonElement && active.disabled)
+        ) {
+          panelRef.value?.focus({ preventScroll: true });
+        }
+      });
+    }
 
     const totalMatches = computed(() => search.matches.value.length);
     const activeIndex = computed(() => search.activeIndex.value);
@@ -163,6 +185,7 @@ export const FindReplacePanel = defineComponent({
         showNotice(`已替换 1 处，剩余 ${nextMatches.length} 处`);
       } else {
         showNotice('已替换最后 1 处匹配项');
+        keepPanelFocusIfDisabled();
       }
     }
 
@@ -187,6 +210,7 @@ export const FindReplacePanel = defineComponent({
           showNotice(`全部替换未完成：${res.reason || '文档只读或目标受保护'}`, 'error');
         }
         search.find(search.query.value, { selectFirst: false });
+        keepPanelFocusIfDisabled();
         return;
       }
       const outcome = res.replacements;
@@ -200,6 +224,7 @@ export const FindReplacePanel = defineComponent({
       } else {
         showNotice('未找到可替换的内容');
       }
+      keepPanelFocusIfDisabled();
     }
 
     function closePanel() {
@@ -210,18 +235,20 @@ export const FindReplacePanel = defineComponent({
     }
 
     function onGlobalKeydown(event: KeyboardEvent) {
+      if (isImeEvent(event)) return;
       const host = props.hostElement;
       if (!host) return;
       const activeEl = document.activeElement;
       const insideHost = Boolean(activeEl && host.contains(activeEl));
+      const insidePanel = Boolean(activeEl && panelRef.value?.contains(activeEl));
       const isCtrlOrCmd = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
 
-      // Ctrl+H（Win/Linux）或 Cmd+Shift+H / Cmd+Option+F（macOS）呼出查找替换
+      // 严格限定在当前编辑器宿主容器内响应快捷键，避免误拦外部页面控件
       const openChord =
         (isCtrlOrCmd && key === 'h' && !event.altKey) ||
         (event.metaKey && event.altKey && key === 'f');
-      if (openChord && (insideHost || props.open)) {
+      if (openChord && insideHost) {
         event.preventDefault();
         event.stopPropagation();
         props.onOpenRequest?.();
@@ -231,6 +258,34 @@ export const FindReplacePanel = defineComponent({
       if (event.key === 'Escape' && props.open && insideHost) {
         event.preventDefault();
         closePanel();
+        return;
+      }
+
+      // 焦点位于查找面板容器/按钮（非文本输入框）时，允许 Ctrl+Z / Cmd+Z 直接撤销文档替换
+      const inTextInput =
+        activeEl instanceof HTMLInputElement &&
+        activeEl.type !== 'checkbox' &&
+        activeEl.type !== 'button';
+      if (
+        props.open &&
+        insidePanel &&
+        !inTextInput &&
+        isCtrlOrCmd &&
+        !event.altKey &&
+        (key === 'z' || key === 'y')
+      ) {
+        const ed = editorRef.value;
+        if (!ed) return;
+        const cmdType = key === 'y' || event.shiftKey ? 'redo' : 'undo';
+        if (ed.can({ type: cmdType }).ok) {
+          event.preventDefault();
+          event.stopPropagation();
+          const res = ed.exec({ type: cmdType });
+          if (res.ok) {
+            if (hasQuery.value) search.find(search.query.value, { selectFirst: false });
+            showNotice(cmdType === 'undo' ? '已撤销上一步操作' : '已重做操作');
+          }
+        }
       }
     }
 
@@ -248,6 +303,8 @@ export const FindReplacePanel = defineComponent({
         h(
           'section',
           {
+            ref: panelRef,
+            tabindex: -1,
             class: 'weboffice-find-replace',
             'data-testid': 'weboffice-find-replace',
             role: 'dialog',
@@ -282,11 +339,18 @@ export const FindReplacePanel = defineComponent({
                 placeholder: '查找内容…',
                 'aria-label': '查找内容',
                 value: search.query.value,
+                onCompositionstart: () => {
+                  isComposing.value = true;
+                },
+                onCompositionend: () => {
+                  isComposing.value = false;
+                },
                 onInput: (e: Event) => {
                   notice.value = '';
                   search.setQuery((e.target as HTMLInputElement).value);
                 },
                 onKeydown: (e: KeyboardEvent) => {
+                  if (isImeEvent(e)) return;
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     handleFindStep(e.shiftKey ? 'previous' : 'next');
@@ -330,13 +394,20 @@ export const FindReplacePanel = defineComponent({
                 placeholder: '替换为…',
                 'aria-label': '替换为',
                 value: replaceText.value,
+                onCompositionstart: () => {
+                  isComposing.value = true;
+                },
+                onCompositionend: () => {
+                  isComposing.value = false;
+                },
                 onInput: (e: Event) => {
                   replaceText.value = (e.target as HTMLInputElement).value;
                 },
                 onKeydown: (e: KeyboardEvent) => {
+                  if (isImeEvent(e)) return;
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    handleReplaceCurrent();
+                    if (canReplaceOne.value) handleReplaceCurrent();
                   } else if (e.key === 'Escape') {
                     e.preventDefault();
                     closePanel();

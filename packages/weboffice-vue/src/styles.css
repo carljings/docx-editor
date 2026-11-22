@@ -313,9 +313,11 @@
 .weboffice-find-replace {
   position: absolute;
   top: 112px;
-  right: 20px;
+  right: clamp(8px, 2vw, 20px);
   z-index: 2200;
-  width: 348px;
+  box-sizing: border-box;
+  width: min(348px, calc(100% - 16px));
+  max-width: calc(100% - 16px);
   padding: 10px 12px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -323,6 +325,7 @@
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
   color: #1f2328;
   font-size: 12px;
+  outline: none;
 }
 
 .weboffice-find-replace__head {
@@ -622,17 +625,24 @@
 /* 底部 WPS 风格状态栏 */
 .weboffice-statusbar {
   flex: none;
-  height: 28px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 2px 12px;
   border-top: 1px solid #dce3ec;
   background: #f8fafc;
   color: #475569;
   font-size: 12px;
   user-select: none;
   z-index: 40;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.weboffice-statusbar::-webkit-scrollbar {
+  display: none;
 }
 
 .weboffice-statusbar__left,
@@ -640,6 +650,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .weboffice-statusbar__div {

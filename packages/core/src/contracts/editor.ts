@@ -1469,6 +1469,8 @@ export interface EditorQueries extends DocQueries, EditorChartQueries {
   tableContext: Record<never, never>;
   hyperlinkAt: { pos?: number; fallbackHref?: string };
   selectedText: Record<never, never>;
+  /** Current selection clipboard flavours (`text/plain` + `text/html`), read-only. */
+  copyFlavours: Record<never, never>;
   watermark: Record<never, never>;
   splitCellConfig: Record<never, never>;
   contentControlAt: { filter?: ContentControlFilter };
@@ -1494,6 +1496,7 @@ export interface EditorQueryResults extends DocQueryResults, EditorChartQueryRes
   tableContext: TableContext | null;
   hyperlinkAt: HyperlinkInfo | null;
   selectedText: string;
+  copyFlavours: { readonly text: string; readonly html: string | null; readonly drawingNodeId?: string; readonly reason?: string } | null;
   watermark: Watermark | null;
   splitCellConfig: { maxRows: number; maxCols: number } | null;
   contentControlAt: ContentControlSummary | null;

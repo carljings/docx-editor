@@ -1,4 +1,4 @@
-import { Teleport, defineComponent, h, nextTick, ref, watch, type PropType } from 'vue';
+import { Teleport, defineComponent, h, nextTick, reactive, ref, watch, type PropType } from 'vue';
 import {
   useDocxEditor,
   useEditorState,
@@ -6,6 +6,7 @@ import {
   useParagraphFormat,
 } from '@docx-editor.dev/vue';
 import type { EditorSnapshot } from '@docx-editor.dev/core/contracts/editor';
+import type { PageSetupUpdate, ParagraphFormatUpdate } from '@docx-editor.dev/vue';
 import {
   GB_T_9704_MARGINS_CM,
   OFFICIAL_PAPER_SIZES,
@@ -22,10 +23,14 @@ const selectCurrentFontSizePt = (snapshot: EditorSnapshot): number => {
   return typeof pt === 'number' && pt > 0 ? pt : 16;
 };
 
+type AlignDraft = '' | 'left' | 'center' | 'right' | 'justify';
+type SpecialKindDraft = '' | 'none' | 'firstLine' | 'hanging';
+type LineRuleDraft = '' | 'exact' | 'atLeast' | 'multiple';
+
 /**
  * 中文公文排版设置对话框（厘米 / 字符 / 磅）：
- * - 段落排版页签：对齐、左右缩进（厘米）、首行/悬挂缩进（支持“字符”与“厘米”切换）、段前段后（磅）、行距（固定值/最小值/多倍）；
- * - 页面设置页签：纸张（A4/A3/B5/16开/A5）、纵横向、页边距（厘米），内置 GB/T 9704-2012 公文标准页边距一键预设；
+ * - 段落排版页签：逐字段脏值追踪，支持多段混选保留未触碰属性；首行/悬挂缩进在“字符”单位下写入 OOXML `*Chars` 语义；
+ * - 页面设置页签：完整保留自定义纸张尺寸与分节差异，仅提交已改动字段；所有数值框采用 `step="any"` 兼容 2.54 / 3.18 cm 等预设；
  * - 提交时调用 Core 原生 `setParagraphFormat` / `setPageSetup`，原子单步可撤销。
  */
 export const OfficialFormatDialog = defineComponent({
@@ -62,62 +67,141 @@ export const OfficialFormatDialog = defineComponent({
     const activeTab = ref<OfficialFormatTab>('paragraph');
     const errorText = ref('');
 
-    // 段落草稿态
-    const align = ref<'left' | 'center' | 'right' | 'justify'>('left');
-    const indentLeftCm = ref(0);
-    const indentRightCm = ref(0);
-    const specialKind = ref<'none' | 'firstLine' | 'hanging'>('none');
+    // 段落草稿态（字符串存储数值框以支持混选留空显示）
+    const align = ref<AlignDraft>('left');
+    const indentLeftStr = ref('0');
+    const indentRightStr = ref('0');
+    const specialKind = ref<SpecialKindDraft>('none');
     const specialUnit = ref<'chars' | 'cm'>('chars');
-    const specialValue = ref(2);
-    const spaceBeforePt = ref(0);
-    const spaceAfterPt = ref(0);
-    const lineRule = ref<'exact' | 'atLeast' | 'multiple'>('exact');
-    const lineValue = ref(28);
+    const specialValStr = ref('2');
+    const spaceBeforeStr = ref('0');
+    const spaceAfterStr = ref('0');
+    const lineRule = ref<LineRuleDraft>('exact');
+    const lineValStr = ref('28');
+
+    const paraMixed = reactive({
+      align: false,
+      indentLeft: false,
+      indentRight: false,
+      special: false,
+      spaceBefore: false,
+      spaceAfter: false,
+      lineSpacing: false,
+    });
+
+    const paraDirty = reactive({
+      align: false,
+      indentLeft: false,
+      indentRight: false,
+      special: false,
+      spaceBefore: false,
+      spaceAfter: false,
+      lineSpacing: false,
+    });
 
     // 页面草稿态
     const paperId = ref('a4');
+    const customPaperSize = ref<{ widthTwips: number; heightTwips: number } | null>(null);
     const orientation = ref<'portrait' | 'landscape'>('portrait');
-    const marginTopCm = ref(GB_T_9704_MARGINS_CM.top);
-    const marginBottomCm = ref(GB_T_9704_MARGINS_CM.bottom);
-    const marginLeftCm = ref(GB_T_9704_MARGINS_CM.left);
-    const marginRightCm = ref(GB_T_9704_MARGINS_CM.right);
+    const marginTopStr = ref(String(GB_T_9704_MARGINS_CM.top));
+    const marginBottomStr = ref(String(GB_T_9704_MARGINS_CM.bottom));
+    const marginLeftStr = ref(String(GB_T_9704_MARGINS_CM.left));
+    const marginRightStr = ref(String(GB_T_9704_MARGINS_CM.right));
     const pageScope = ref<'document' | 'section'>('document');
+
+    const pageDirty = reactive({
+      paper: false,
+      orientation: false,
+      marginTop: false,
+      marginBottom: false,
+      marginLeft: false,
+      marginRight: false,
+    });
+
+    function resetDirty() {
+      paraDirty.align = false;
+      paraDirty.indentLeft = false;
+      paraDirty.indentRight = false;
+      paraDirty.special = false;
+      paraDirty.spaceBefore = false;
+      paraDirty.spaceAfter = false;
+      paraDirty.lineSpacing = false;
+
+      pageDirty.paper = false;
+      pageDirty.orientation = false;
+      pageDirty.marginTop = false;
+      pageDirty.marginBottom = false;
+      pageDirty.marginLeft = false;
+      pageDirty.marginRight = false;
+    }
 
     function seedFromEditor() {
       errorText.value = '';
-      // Seed paragraph fields
+      resetDirty();
+
+      // Seed paragraph fields, respecting mixed-selection disagreements
       const pf = paragraph.format.value;
       const fontPt = currentFontSizePt.value;
       if (pf) {
-        align.value = pf.alignment ?? 'left';
-        indentLeftCm.value = twipsToCm(pf.indentLeftTwips ?? 0);
-        indentRightCm.value = twipsToCm(pf.indentRightTwips ?? 0);
-        const fl = pf.indentFirstLineTwips ?? 0;
-        if (fl > 0) {
-          specialKind.value = 'firstLine';
+        paraMixed.align = pf.disagrees.alignment;
+        align.value = pf.disagrees.alignment ? '' : (pf.alignment ?? 'left');
+
+        paraMixed.indentLeft = pf.disagrees.indentLeft || pf.indentUnknown;
+        indentLeftStr.value = paraMixed.indentLeft
+          ? ''
+          : String(twipsToCm(pf.indentLeftTwips ?? 0));
+
+        paraMixed.indentRight = pf.disagrees.indentRight || pf.indentUnknown;
+        indentRightStr.value = paraMixed.indentRight
+          ? ''
+          : String(twipsToCm(pf.indentRightTwips ?? 0));
+
+        paraMixed.special = pf.disagrees.indentFirstLine || pf.indentUnknown;
+        if (paraMixed.special) {
+          specialKind.value = '';
           specialUnit.value = 'chars';
-          specialValue.value = twipsToChars(fl, fontPt);
-        } else if (fl < 0) {
-          specialKind.value = 'hanging';
-          specialUnit.value = 'cm';
-          specialValue.value = twipsToCm(Math.abs(fl));
+          specialValStr.value = '';
         } else {
-          specialKind.value = 'none';
-          specialUnit.value = 'chars';
-          specialValue.value = 2;
+          const fl = pf.indentFirstLineTwips ?? 0;
+          if (fl > 0) {
+            specialKind.value = 'firstLine';
+            specialUnit.value = 'chars';
+            specialValStr.value = String(twipsToChars(fl, fontPt));
+          } else if (fl < 0) {
+            specialKind.value = 'hanging';
+            specialUnit.value = 'cm';
+            specialValStr.value = String(twipsToCm(Math.abs(fl)));
+          } else {
+            specialKind.value = 'none';
+            specialUnit.value = 'chars';
+            specialValStr.value = '2';
+          }
         }
-        spaceBeforePt.value = Math.round((pf.spaceBeforePt ?? 0) * 10) / 10;
-        spaceAfterPt.value = Math.round((pf.spaceAfterPt ?? 0) * 10) / 10;
-        if (pf.lineSpacing) {
+
+        paraMixed.spaceBefore = pf.disagrees.spaceBeforePt;
+        spaceBeforeStr.value = paraMixed.spaceBefore
+          ? ''
+          : String(Math.round((pf.spaceBeforePt ?? 0) * 10) / 10);
+
+        paraMixed.spaceAfter = pf.disagrees.spaceAfterPt;
+        spaceAfterStr.value = paraMixed.spaceAfter
+          ? ''
+          : String(Math.round((pf.spaceAfterPt ?? 0) * 10) / 10);
+
+        paraMixed.lineSpacing = pf.disagrees.lineSpacing;
+        if (paraMixed.lineSpacing) {
+          lineRule.value = '';
+          lineValStr.value = '';
+        } else if (pf.lineSpacing) {
           lineRule.value = pf.lineSpacing.rule;
-          lineValue.value = Math.round(pf.lineSpacing.value * 100) / 100;
+          lineValStr.value = String(Math.round(pf.lineSpacing.value * 100) / 100);
         } else {
-          lineRule.value = 'exact';
-          lineValue.value = 28;
+          lineRule.value = 'multiple';
+          lineValStr.value = '1';
         }
       }
 
-      // Seed page setup fields
+      // Seed page setup fields, preserving custom paper sizes intact
       const ps = pageSetup.pageSetup.value;
       if (ps) {
         orientation.value = ps.orientation;
@@ -126,11 +210,17 @@ export const OfficialFormatDialog = defineComponent({
         const matched = OFFICIAL_PAPER_SIZES.find(
           (p) => Math.abs(p.widthTwips - shortSide) < 40 && Math.abs(p.heightTwips - longSide) < 40
         );
-        paperId.value = matched?.id ?? 'a4';
-        marginTopCm.value = twipsToCm(ps.marginsTwips.top);
-        marginBottomCm.value = twipsToCm(ps.marginsTwips.bottom);
-        marginLeftCm.value = twipsToCm(ps.marginsTwips.left);
-        marginRightCm.value = twipsToCm(ps.marginsTwips.right);
+        if (matched) {
+          paperId.value = matched.id;
+          customPaperSize.value = null;
+        } else {
+          paperId.value = 'custom';
+          customPaperSize.value = { widthTwips: shortSide, heightTwips: longSide };
+        }
+        marginTopStr.value = String(twipsToCm(ps.marginsTwips.top));
+        marginBottomStr.value = String(twipsToCm(ps.marginsTwips.bottom));
+        marginLeftStr.value = String(twipsToCm(ps.marginsTwips.left));
+        marginRightStr.value = String(twipsToCm(ps.marginsTwips.right));
       }
     }
 
@@ -153,42 +243,71 @@ export const OfficialFormatDialog = defineComponent({
     function switchSpecialUnit(nextUnit: 'chars' | 'cm') {
       if (specialUnit.value === nextUnit) return;
       const fontPt = currentFontSizePt.value;
-      const currentTwips =
-        specialUnit.value === 'chars'
-          ? charsToTwips(specialValue.value, fontPt)
-          : cmToTwips(specialValue.value);
+      const parsed = Number(specialValStr.value);
+      if (Number.isFinite(parsed)) {
+        const currentTwips =
+          specialUnit.value === 'chars' ? charsToTwips(parsed, fontPt) : cmToTwips(parsed);
+        specialValStr.value = String(
+          nextUnit === 'chars' ? twipsToChars(currentTwips, fontPt) : twipsToCm(currentTwips)
+        );
+      }
       specialUnit.value = nextUnit;
-      specialValue.value =
-        nextUnit === 'chars' ? twipsToChars(currentTwips, fontPt) : twipsToCm(currentTwips);
+      paraDirty.special = true;
+      paraMixed.special = false;
     }
 
     function applyOfficialBodyPreset() {
       align.value = 'justify';
-      indentLeftCm.value = 0;
-      indentRightCm.value = 0;
+      indentLeftStr.value = '0';
+      indentRightStr.value = '0';
       specialKind.value = 'firstLine';
       specialUnit.value = 'chars';
-      specialValue.value = 2;
-      spaceBeforePt.value = 0;
-      spaceAfterPt.value = 0;
+      specialValStr.value = '2';
+      spaceBeforeStr.value = '0';
+      spaceAfterStr.value = '0';
       lineRule.value = 'exact';
-      lineValue.value = 28;
+      lineValStr.value = '28';
+      paraMixed.align = false;
+      paraMixed.indentLeft = false;
+      paraMixed.indentRight = false;
+      paraMixed.special = false;
+      paraMixed.spaceBefore = false;
+      paraMixed.spaceAfter = false;
+      paraMixed.lineSpacing = false;
+      paraDirty.align = true;
+      paraDirty.indentLeft = true;
+      paraDirty.indentRight = true;
+      paraDirty.special = true;
+      paraDirty.spaceBefore = true;
+      paraDirty.spaceAfter = true;
+      paraDirty.lineSpacing = true;
     }
 
     function applyOfficialMarginPreset() {
       paperId.value = 'a4';
       orientation.value = 'portrait';
-      marginTopCm.value = GB_T_9704_MARGINS_CM.top;
-      marginBottomCm.value = GB_T_9704_MARGINS_CM.bottom;
-      marginLeftCm.value = GB_T_9704_MARGINS_CM.left;
-      marginRightCm.value = GB_T_9704_MARGINS_CM.right;
+      marginTopStr.value = String(GB_T_9704_MARGINS_CM.top);
+      marginBottomStr.value = String(GB_T_9704_MARGINS_CM.bottom);
+      marginLeftStr.value = String(GB_T_9704_MARGINS_CM.left);
+      marginRightStr.value = String(GB_T_9704_MARGINS_CM.right);
+      pageDirty.paper = true;
+      pageDirty.orientation = true;
+      pageDirty.marginTop = true;
+      pageDirty.marginBottom = true;
+      pageDirty.marginLeft = true;
+      pageDirty.marginRight = true;
     }
 
     function applyStandardMarginPreset() {
-      marginTopCm.value = 2.54;
-      marginBottomCm.value = 2.54;
-      marginLeftCm.value = 3.18;
-      marginRightCm.value = 3.18;
+      // 常规预设只改四边页边距，不覆盖当前文档的自定义或既有纸张尺寸
+      marginTopStr.value = '2.54';
+      marginBottomStr.value = '2.54';
+      marginLeftStr.value = '3.18';
+      marginRightStr.value = '3.18';
+      pageDirty.marginTop = true;
+      pageDirty.marginBottom = true;
+      pageDirty.marginLeft = true;
+      pageDirty.marginRight = true;
     }
 
     function handleClose() {
@@ -197,38 +316,93 @@ export const OfficialFormatDialog = defineComponent({
       editorRef.value?.focus();
     }
 
+    function parseNonNegative(raw: string, fallback = 0): number | null {
+      const trimmed = raw.trim();
+      if (trimmed === '') return null;
+      const n = Number(trimmed);
+      if (!Number.isFinite(n) || n < 0) return fallback;
+      return n;
+    }
+
     function handleSubmit(e: Event) {
       e.preventDefault();
       errorText.value = '';
+
       if (activeTab.value === 'paragraph') {
-        const fontPt = currentFontSizePt.value;
-        const magTwips =
-          specialKind.value === 'none'
-            ? 0
-            : specialUnit.value === 'chars'
-              ? charsToTwips(Math.max(0, specialValue.value), fontPt)
-              : cmToTwips(Math.max(0, specialValue.value));
-        const signedFirstLine =
-          specialKind.value === 'hanging'
-            ? -magTwips
-            : specialKind.value === 'firstLine'
-              ? magTwips
-              : 0;
-        const ok = paragraph.apply({
-          alignment: align.value,
-          indentLeftTwips: cmToTwips(Math.max(0, indentLeftCm.value)),
-          indentRightTwips: cmToTwips(Math.max(0, indentRightCm.value)),
-          indentFirstLineTwips: signedFirstLine,
-          spaceBeforePt: Math.max(0, spaceBeforePt.value),
-          spaceAfterPt: Math.max(0, spaceAfterPt.value),
-          lineSpacing: {
-            rule: lineRule.value,
-            value:
-              lineRule.value === 'multiple'
-                ? Math.max(0.5, Math.min(10, lineValue.value))
-                : Math.max(6, Math.min(200, lineValue.value)),
-          },
-        });
+        const update: { -readonly [K in keyof ParagraphFormatUpdate]: ParagraphFormatUpdate[K] } =
+          {};
+        let hasChanges = false;
+
+        if (paraDirty.align && align.value !== '') {
+          update.alignment = align.value;
+          hasChanges = true;
+        }
+        if (paraDirty.indentLeft) {
+          const val = parseNonNegative(indentLeftStr.value);
+          if (val !== null) {
+            update.indentLeftTwips = cmToTwips(Math.min(50, val));
+            hasChanges = true;
+          }
+        }
+        if (paraDirty.indentRight) {
+          const val = parseNonNegative(indentRightStr.value);
+          if (val !== null) {
+            update.indentRightTwips = cmToTwips(Math.min(50, val));
+            hasChanges = true;
+          }
+        }
+        if (paraDirty.special && specialKind.value !== '') {
+          const fontPt = currentFontSizePt.value;
+          if (specialKind.value === 'none') {
+            update.indentFirstLineChars = 0;
+            update.indentFirstLineTwips = 0;
+            hasChanges = true;
+          } else {
+            const rawVal = parseNonNegative(specialValStr.value) ?? 0;
+            const sign = specialKind.value === 'hanging' ? -1 : 1;
+            if (specialUnit.value === 'chars') {
+              const charsHundredths = Math.round(Math.min(50, rawVal) * 100);
+              update.indentFirstLineChars = sign * charsHundredths;
+              update.indentFirstLineTwips = sign * charsToTwips(Math.min(50, rawVal), fontPt);
+            } else {
+              update.indentFirstLineTwips = sign * cmToTwips(Math.min(50, rawVal));
+            }
+            hasChanges = true;
+          }
+        }
+        if (paraDirty.spaceBefore) {
+          const val = parseNonNegative(spaceBeforeStr.value);
+          if (val !== null) {
+            update.spaceBeforePt = Math.min(1584, val);
+            hasChanges = true;
+          }
+        }
+        if (paraDirty.spaceAfter) {
+          const val = parseNonNegative(spaceAfterStr.value);
+          if (val !== null) {
+            update.spaceAfterPt = Math.min(1584, val);
+            hasChanges = true;
+          }
+        }
+        if (paraDirty.lineSpacing && lineRule.value !== '') {
+          const rawVal = Number(lineValStr.value);
+          if (Number.isFinite(rawVal)) {
+            update.lineSpacing = {
+              rule: lineRule.value,
+              value:
+                lineRule.value === 'multiple'
+                  ? Math.max(0.5, Math.min(10, rawVal))
+                  : Math.max(6, Math.min(200, rawVal)),
+            };
+            hasChanges = true;
+          }
+        }
+
+        if (!hasChanges) {
+          handleClose();
+          return;
+        }
+        const ok = paragraph.apply(update);
         if (!ok) {
           errorText.value = '当前位置无法修改段落格式（可能为只读或受保护区域）';
           return;
@@ -237,22 +411,65 @@ export const OfficialFormatDialog = defineComponent({
         return;
       }
 
-      const paper =
-        OFFICIAL_PAPER_SIZES.find((p) => p.id === paperId.value) ?? OFFICIAL_PAPER_SIZES[0]!;
-      const pageWidthTwips =
-        orientation.value === 'landscape' ? paper.heightTwips : paper.widthTwips;
-      const pageHeightTwips =
-        orientation.value === 'landscape' ? paper.widthTwips : paper.heightTwips;
-      const ok = pageSetup.apply({
-        pageWidthTwips,
-        pageHeightTwips,
-        orientation: orientation.value,
-        marginTopTwips: cmToTwips(Math.max(0.5, marginTopCm.value)),
-        marginBottomTwips: cmToTwips(Math.max(0.5, marginBottomCm.value)),
-        marginLeftTwips: cmToTwips(Math.max(0.5, marginLeftCm.value)),
-        marginRightTwips: cmToTwips(Math.max(0.5, marginRightCm.value)),
-        scope: pageScope.value,
-      });
+      // 页面设置：仅提交被用户改动过的字段，绝不覆写自定义纸张或未改动项
+      const pageUpdate: { -readonly [K in keyof PageSetupUpdate]: PageSetupUpdate[K] } = {};
+      let hasPageChanges = false;
+
+      if (pageDirty.paper) {
+        if (paperId.value === 'custom' && customPaperSize.value) {
+          const base = customPaperSize.value;
+          pageUpdate.pageWidthTwips =
+            orientation.value === 'landscape' ? base.heightTwips : base.widthTwips;
+          pageUpdate.pageHeightTwips =
+            orientation.value === 'landscape' ? base.widthTwips : base.heightTwips;
+          pageUpdate.orientation = orientation.value;
+          hasPageChanges = true;
+        } else {
+          const paper = OFFICIAL_PAPER_SIZES.find((p) => p.id === paperId.value);
+          if (paper) {
+            pageUpdate.pageWidthTwips =
+              orientation.value === 'landscape' ? paper.heightTwips : paper.widthTwips;
+            pageUpdate.pageHeightTwips =
+              orientation.value === 'landscape' ? paper.widthTwips : paper.heightTwips;
+            pageUpdate.orientation = orientation.value;
+            hasPageChanges = true;
+          }
+        }
+      } else if (pageDirty.orientation) {
+        // 仅改纸张方向时不带固定宽高，让引擎按各节自身尺寸翻转，保护分节自定义纸型
+        pageUpdate.orientation = orientation.value;
+        hasPageChanges = true;
+      }
+
+      const marginChecks: ReadonlyArray<{
+        dirty: boolean;
+        raw: string;
+        key: 'marginTopTwips' | 'marginBottomTwips' | 'marginLeftTwips' | 'marginRightTwips';
+      }> = [
+        { dirty: pageDirty.marginTop, raw: marginTopStr.value, key: 'marginTopTwips' },
+        { dirty: pageDirty.marginBottom, raw: marginBottomStr.value, key: 'marginBottomTwips' },
+        { dirty: pageDirty.marginLeft, raw: marginLeftStr.value, key: 'marginLeftTwips' },
+        { dirty: pageDirty.marginRight, raw: marginRightStr.value, key: 'marginRightTwips' },
+      ];
+
+      for (const item of marginChecks) {
+        if (!item.dirty) continue;
+        const val = Number(item.raw);
+        if (!Number.isFinite(val) || val < 0 || val > 25) {
+          errorText.value = '请输入合法的页边距数值（0 ~ 25 厘米）';
+          return;
+        }
+        pageUpdate[item.key] = cmToTwips(val);
+        hasPageChanges = true;
+      }
+
+      if (!hasPageChanges) {
+        handleClose();
+        return;
+      }
+
+      pageUpdate.scope = pageScope.value;
+      const ok = pageSetup.apply(pageUpdate);
       if (!ok) {
         errorText.value = '当前文档无法应用页面设置（请检查页边距是否过大或处于只读模式）';
         return;
@@ -262,24 +479,31 @@ export const OfficialFormatDialog = defineComponent({
 
     const numInput = (
       label: string,
-      value: number,
-      onChange: (n: number) => void,
-      opts: { step?: number; min?: number; max?: number; unit?: string; testId?: string } = {}
+      value: string,
+      onChange: (next: string) => void,
+      opts: {
+        min?: number;
+        max?: number;
+        unit?: string;
+        testId?: string;
+        placeholder?: string;
+      } = {}
     ) =>
       h('label', { class: 'weboffice-dialog__field' }, [
         h('span', { class: 'weboffice-dialog__label' }, label),
         h('span', { class: 'weboffice-dialog__input-wrap' }, [
           h('input', {
             type: 'number',
+            inputmode: 'decimal',
             class: 'weboffice-dialog__input',
             'data-testid': opts.testId,
-            step: opts.step ?? 0.1,
+            step: 'any',
             min: opts.min ?? 0,
             max: opts.max ?? 50,
-            value: String(value),
+            placeholder: opts.placeholder,
+            value,
             onInput: (e: Event) => {
-              const parsed = Number((e.target as HTMLInputElement).value);
-              if (Number.isFinite(parsed)) onChange(parsed);
+              onChange((e.target as HTMLInputElement).value);
             },
           }),
           opts.unit ? h('span', { class: 'weboffice-dialog__unit' }, opts.unit) : null,
@@ -288,6 +512,10 @@ export const OfficialFormatDialog = defineComponent({
 
     return () => {
       if (!props.open || !props.hostElement) return null;
+      const customLabel = customPaperSize.value
+        ? `自定义 (${twipsToCm(customPaperSize.value.widthTwips)} × ${twipsToCm(customPaperSize.value.heightTwips)} cm)`
+        : '自定义纸张';
+
       return h(Teleport, { to: props.hostElement }, [
         h(
           'dialog',
@@ -374,13 +602,18 @@ export const OfficialFormatDialog = defineComponent({
                           'select',
                           {
                             class: 'weboffice-dialog__select',
+                            'data-testid': 'para-align',
                             value: align.value,
                             onChange: (e: Event) => {
-                              align.value = (e.target as HTMLSelectElement)
-                                .value as typeof align.value;
+                              align.value = (e.target as HTMLSelectElement).value as AlignDraft;
+                              paraMixed.align = false;
+                              paraDirty.align = true;
                             },
                           },
                           [
+                            paraMixed.align
+                              ? h('option', { value: '', disabled: true }, '— 保持混合 —')
+                              : null,
                             h('option', { value: 'left' }, '左对齐'),
                             h('option', { value: 'center' }, '居中对齐'),
                             h('option', { value: 'right' }, '右对齐'),
@@ -393,14 +626,32 @@ export const OfficialFormatDialog = defineComponent({
                         { class: 'weboffice-dialog__hint' },
                         `当前字号参考：${currentFontSizePt.value} 磅`
                       ),
-                      numInput('左缩进', indentLeftCm.value, (n) => (indentLeftCm.value = n), {
-                        unit: '厘米',
-                        step: 0.1,
-                      }),
-                      numInput('右缩进', indentRightCm.value, (n) => (indentRightCm.value = n), {
-                        unit: '厘米',
-                        step: 0.1,
-                      }),
+                      numInput(
+                        '左缩进',
+                        indentLeftStr.value,
+                        (v) => {
+                          indentLeftStr.value = v;
+                          paraMixed.indentLeft = false;
+                          paraDirty.indentLeft = true;
+                        },
+                        {
+                          unit: '厘米',
+                          placeholder: paraMixed.indentLeft ? '混合' : undefined,
+                        }
+                      ),
+                      numInput(
+                        '右缩进',
+                        indentRightStr.value,
+                        (v) => {
+                          indentRightStr.value = v;
+                          paraMixed.indentRight = false;
+                          paraDirty.indentRight = true;
+                        },
+                        {
+                          unit: '厘米',
+                          placeholder: paraMixed.indentRight ? '混合' : undefined,
+                        }
+                      ),
                       h('label', { class: 'weboffice-dialog__field' }, [
                         h('span', { class: 'weboffice-dialog__label' }, '特殊缩进'),
                         h(
@@ -410,11 +661,20 @@ export const OfficialFormatDialog = defineComponent({
                             'data-testid': 'para-special-kind',
                             value: specialKind.value,
                             onChange: (e: Event) => {
-                              specialKind.value = (e.target as HTMLSelectElement)
-                                .value as typeof specialKind.value;
+                              const nextKind = (e.target as HTMLSelectElement)
+                                .value as SpecialKindDraft;
+                              specialKind.value = nextKind;
+                              if (nextKind !== 'none' && specialValStr.value.trim() === '') {
+                                specialValStr.value = specialUnit.value === 'chars' ? '2' : '0.74';
+                              }
+                              paraMixed.special = false;
+                              paraDirty.special = true;
                             },
                           },
                           [
+                            paraMixed.special
+                              ? h('option', { value: '', disabled: true }, '— 保持混合 —')
+                              : null,
                             h('option', { value: 'none' }, '无'),
                             h('option', { value: 'firstLine' }, '首行缩进'),
                             h('option', { value: 'hanging' }, '悬挂缩进'),
@@ -426,23 +686,26 @@ export const OfficialFormatDialog = defineComponent({
                         h('span', { class: 'weboffice-dialog__input-wrap' }, [
                           h('input', {
                             type: 'number',
+                            inputmode: 'decimal',
                             class: 'weboffice-dialog__input',
                             'data-testid': 'para-special-val',
-                            disabled: specialKind.value === 'none',
-                            step: specialUnit.value === 'chars' ? 0.5 : 0.1,
+                            disabled: specialKind.value === 'none' || specialKind.value === '',
+                            step: 'any',
                             min: 0,
-                            max: 20,
-                            value: String(specialValue.value),
+                            max: 50,
+                            placeholder: paraMixed.special ? '混合' : undefined,
+                            value: specialValStr.value,
                             onInput: (e: Event) => {
-                              const parsed = Number((e.target as HTMLInputElement).value);
-                              if (Number.isFinite(parsed)) specialValue.value = parsed;
+                              specialValStr.value = (e.target as HTMLInputElement).value;
+                              paraMixed.special = false;
+                              paraDirty.special = true;
                             },
                           }),
                           h(
                             'select',
                             {
                               class: 'weboffice-dialog__unit-select',
-                              disabled: specialKind.value === 'none',
+                              disabled: specialKind.value === 'none' || specialKind.value === '',
                               value: specialUnit.value,
                               onChange: (e: Event) =>
                                 switchSpecialUnit(
@@ -456,16 +719,34 @@ export const OfficialFormatDialog = defineComponent({
                           ),
                         ]),
                       ]),
-                      numInput('段前间距', spaceBeforePt.value, (n) => (spaceBeforePt.value = n), {
-                        unit: '磅',
-                        step: 1,
-                        max: 200,
-                      }),
-                      numInput('段后间距', spaceAfterPt.value, (n) => (spaceAfterPt.value = n), {
-                        unit: '磅',
-                        step: 1,
-                        max: 200,
-                      }),
+                      numInput(
+                        '段前间距',
+                        spaceBeforeStr.value,
+                        (v) => {
+                          spaceBeforeStr.value = v;
+                          paraMixed.spaceBefore = false;
+                          paraDirty.spaceBefore = true;
+                        },
+                        {
+                          unit: '磅',
+                          max: 200,
+                          placeholder: paraMixed.spaceBefore ? '混合' : undefined,
+                        }
+                      ),
+                      numInput(
+                        '段后间距',
+                        spaceAfterStr.value,
+                        (v) => {
+                          spaceAfterStr.value = v;
+                          paraMixed.spaceAfter = false;
+                          paraDirty.spaceAfter = true;
+                        },
+                        {
+                          unit: '磅',
+                          max: 200,
+                          placeholder: paraMixed.spaceAfter ? '混合' : undefined,
+                        }
+                      ),
                       h('label', { class: 'weboffice-dialog__field' }, [
                         h('span', { class: 'weboffice-dialog__label' }, '行距规则'),
                         h(
@@ -476,29 +757,47 @@ export const OfficialFormatDialog = defineComponent({
                             value: lineRule.value,
                             onChange: (e: Event) => {
                               const nextRule = (e.target as HTMLSelectElement)
-                                .value as typeof lineRule.value;
+                                .value as LineRuleDraft;
                               if (nextRule === 'multiple' && lineRule.value !== 'multiple') {
-                                lineValue.value = 1.5;
-                              } else if (nextRule !== 'multiple' && lineRule.value === 'multiple') {
-                                lineValue.value = 28;
+                                lineValStr.value = '1.5';
+                              } else if (
+                                nextRule !== 'multiple' &&
+                                (lineRule.value === 'multiple' || lineRule.value === '')
+                              ) {
+                                lineValStr.value = '28';
                               }
                               lineRule.value = nextRule;
+                              paraMixed.lineSpacing = false;
+                              paraDirty.lineSpacing = true;
                             },
                           },
                           [
+                            paraMixed.lineSpacing
+                              ? h('option', { value: '', disabled: true }, '— 保持混合 —')
+                              : null,
                             h('option', { value: 'exact' }, '固定值（公文推荐）'),
                             h('option', { value: 'atLeast' }, '最小值'),
                             h('option', { value: 'multiple' }, '多倍行距'),
                           ]
                         ),
                       ]),
-                      numInput('行距设置值', lineValue.value, (n) => (lineValue.value = n), {
-                        unit: lineRule.value === 'multiple' ? '倍' : '磅',
-                        step: lineRule.value === 'multiple' ? 0.05 : 1,
-                        min: lineRule.value === 'multiple' ? 0.5 : 6,
-                        max: lineRule.value === 'multiple' ? 10 : 200,
-                        testId: 'para-line-val',
-                      }),
+                      numInput(
+                        '行距设置值',
+                        lineValStr.value,
+                        (v) => {
+                          lineValStr.value = v;
+                          if (lineRule.value === '') lineRule.value = 'exact';
+                          paraMixed.lineSpacing = false;
+                          paraDirty.lineSpacing = true;
+                        },
+                        {
+                          unit: lineRule.value === 'multiple' ? '倍' : '磅',
+                          min: lineRule.value === 'multiple' ? 0.5 : 6,
+                          max: lineRule.value === 'multiple' ? 10 : 200,
+                          testId: 'para-line-val',
+                          placeholder: paraMixed.lineSpacing ? '混合' : undefined,
+                        }
+                      ),
                     ]),
                   ])
                 : h('div', { class: 'weboffice-dialog__body' }, [
@@ -519,6 +818,7 @@ export const OfficialFormatDialog = defineComponent({
                         {
                           type: 'button',
                           class: 'weboffice-dialog__chip',
+                          'data-testid': 'preset-standard-margins',
                           onClick: applyStandardMarginPreset,
                         },
                         '常规（2.54/3.18 cm）'
@@ -531,14 +831,21 @@ export const OfficialFormatDialog = defineComponent({
                           'select',
                           {
                             class: 'weboffice-dialog__select',
+                            'data-testid': 'page-paper-size',
                             value: paperId.value,
                             onChange: (e: Event) => {
                               paperId.value = (e.target as HTMLSelectElement).value;
+                              pageDirty.paper = true;
                             },
                           },
-                          OFFICIAL_PAPER_SIZES.map((p) =>
-                            h('option', { key: p.id, value: p.id }, p.label)
-                          )
+                          [
+                            ...OFFICIAL_PAPER_SIZES.map((p) =>
+                              h('option', { key: p.id, value: p.id }, p.label)
+                            ),
+                            customPaperSize.value
+                              ? h('option', { key: 'custom', value: 'custom' }, customLabel)
+                              : null,
+                          ]
                         ),
                       ]),
                       h('label', { class: 'weboffice-dialog__field' }, [
@@ -547,10 +854,12 @@ export const OfficialFormatDialog = defineComponent({
                           'select',
                           {
                             class: 'weboffice-dialog__select',
+                            'data-testid': 'page-orientation',
                             value: orientation.value,
                             onChange: (e: Event) => {
                               orientation.value = (e.target as HTMLSelectElement).value as
                                 'portrait' | 'landscape';
+                              pageDirty.orientation = true;
                             },
                           },
                           [
@@ -559,36 +868,69 @@ export const OfficialFormatDialog = defineComponent({
                           ]
                         ),
                       ]),
-                      numInput('上边距', marginTopCm.value, (n) => (marginTopCm.value = n), {
-                        unit: '厘米',
-                        min: 0.5,
-                        max: 15,
-                        testId: 'page-margin-top',
-                      }),
-                      numInput('下边距', marginBottomCm.value, (n) => (marginBottomCm.value = n), {
-                        unit: '厘米',
-                        min: 0.5,
-                        max: 15,
-                        testId: 'page-margin-bottom',
-                      }),
-                      numInput('左边距', marginLeftCm.value, (n) => (marginLeftCm.value = n), {
-                        unit: '厘米',
-                        min: 0.5,
-                        max: 15,
-                        testId: 'page-margin-left',
-                      }),
-                      numInput('右边距', marginRightCm.value, (n) => (marginRightCm.value = n), {
-                        unit: '厘米',
-                        min: 0.5,
-                        max: 15,
-                        testId: 'page-margin-right',
-                      }),
+                      numInput(
+                        '上边距',
+                        marginTopStr.value,
+                        (v) => {
+                          marginTopStr.value = v;
+                          pageDirty.marginTop = true;
+                        },
+                        {
+                          unit: '厘米',
+                          min: 0,
+                          max: 25,
+                          testId: 'page-margin-top',
+                        }
+                      ),
+                      numInput(
+                        '下边距',
+                        marginBottomStr.value,
+                        (v) => {
+                          marginBottomStr.value = v;
+                          pageDirty.marginBottom = true;
+                        },
+                        {
+                          unit: '厘米',
+                          min: 0,
+                          max: 25,
+                          testId: 'page-margin-bottom',
+                        }
+                      ),
+                      numInput(
+                        '左边距',
+                        marginLeftStr.value,
+                        (v) => {
+                          marginLeftStr.value = v;
+                          pageDirty.marginLeft = true;
+                        },
+                        {
+                          unit: '厘米',
+                          min: 0,
+                          max: 25,
+                          testId: 'page-margin-left',
+                        }
+                      ),
+                      numInput(
+                        '右边距',
+                        marginRightStr.value,
+                        (v) => {
+                          marginRightStr.value = v;
+                          pageDirty.marginRight = true;
+                        },
+                        {
+                          unit: '厘米',
+                          min: 0,
+                          max: 25,
+                          testId: 'page-margin-right',
+                        }
+                      ),
                       h('label', { class: 'weboffice-dialog__field' }, [
                         h('span', { class: 'weboffice-dialog__label' }, '应用于'),
                         h(
                           'select',
                           {
                             class: 'weboffice-dialog__select',
+                            'data-testid': 'page-scope',
                             value: pageScope.value,
                             onChange: (e: Event) => {
                               pageScope.value = (e.target as HTMLSelectElement).value as

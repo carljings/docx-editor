@@ -28,6 +28,8 @@ export function queryEditorDocument<K extends keyof EditorQueries>(
   switch (query.type as keyof EditorQueries) {
     case 'selectedText':
       return (surface?.selectedText() ?? '') as EditorQueryResults[K];
+    case 'copyFlavours':
+      return (surface?.copyFlavours() ?? null) as EditorQueryResults[K];
     case 'selectionFormatting':
       return (surface ? formatting() : null) as EditorQueryResults[K];
     case 'selection':

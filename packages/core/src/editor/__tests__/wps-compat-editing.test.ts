@@ -267,3 +267,42 @@ describe('WPS compat Enter into a different w:next follower style', () => {
     expect(surface.formatting().fontSizeHalfPoints).toBe(36);
   });
 });
+
+describe('character-unit first-line indent command & read-only copyFlavours query', () => {
+  test('setParagraphFormat indentFirstLineChars scales dynamically on 16pt -> 22pt font size change', () => {
+    const body = `<w:p><w:r><w:rPr><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr><w:t>公文首行缩进测试</w:t></w:r></w:p>`;
+    const { editor, surface } = mount(docx(body));
+    select(surface, 0, 0, 8);
+    const applied = editor.exec({
+      type: 'setParagraphFormat',
+      indentFirstLineChars: 200,
+      indentFirstLineTwips: 640,
+    });
+    expect(applied.ok).toBe(true);
+    expect(editor.snapshot().formatting?.indent?.firstLine).toBe(640);
+    expect(bodyParagraphXmls(surface)[0]).toContain('w:firstLineChars="200"');
+
+    // Enlarge text from 16pt -> 22pt: 2 chars must widen from 640 twips to 880 twips.
+    select(surface, 0, 0, 8);
+    const resized = editor.exec({ type: 'setMarkAttr', mark: 'fontSize', attr: 'val', value: 44 });
+    expect(resized.ok).toBe(true);
+    expect(editor.snapshot().formatting?.indent?.firstLine).toBe(880);
+
+    // Zeroing via indentFirstLineChars: 0 cancels both char and twip attributes.
+    editor.exec({ type: 'setParagraphFormat', indentFirstLineChars: 0, indentFirstLineTwips: 0 });
+    expect(editor.snapshot().formatting?.indent?.firstLine).toBe(0);
+  });
+
+  test('copyFlavours query returns plain and rich HTML without mutating the document', () => {
+    const body = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>加粗标题</w:t></w:r></w:p>`;
+    const { editor, surface } = mount(docx(body));
+    select(surface, 0, 0, 4);
+    const flavours = editor.query({ type: 'copyFlavours' });
+    expect(flavours).not.toBeNull();
+    expect(flavours?.text).toBe('加粗标题');
+    expect(flavours?.html).toContain('加粗标题');
+    expect(paragraphTextOf(surface.session.part(), surface.session.paragraphIds()[0]!)).toBe(
+      '加粗标题'
+    );
+  });
+});

@@ -103,6 +103,12 @@ export interface ParagraphFormatCommand {
   indentRightTwips?: number | null;
   /** ONE signed first-line offset: negative is a hanging indent. */
   indentFirstLineTwips?: number | null;
+  /**
+   * Signed first-line indent in hundredths of a character (`w:firstLineChars` / `w:hangingChars`,
+   * negative for hanging). `0` explicitly writes zero to block inherited character indents;
+   * `null` removes both character and twip first-line attributes so the style supplies them again.
+   */
+  indentFirstLineChars?: number | null;
   contextualSpacing?: boolean;
   keepNext?: boolean;
   keepLines?: boolean;

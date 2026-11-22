@@ -352,6 +352,18 @@ export function classifyCommand(command: EditorCommand): CommandSupport {
           };
         }
       }
+      if (command.indentFirstLineChars !== undefined && command.indentFirstLineChars !== null) {
+        if (
+          !Number.isInteger(command.indentFirstLineChars) ||
+          Math.abs(command.indentFirstLineChars) > 10_000
+        ) {
+          return {
+            supported: false,
+            code: 'invalidArgs',
+            reason: 'indentFirstLineChars must be whole hundredths of a character within ±10000',
+          };
+        }
+      }
       for (const field of ['spaceBeforePt', 'spaceAfterPt'] as const) {
         const value = command[field];
         if (value === undefined || value === null) continue;

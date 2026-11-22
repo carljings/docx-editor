@@ -16,6 +16,11 @@ import {
   useParagraphFormat,
 } from '@docx-editor.dev/vue';
 import type { EditorSnapshot, SupportedImageMime } from '@docx-editor.dev/core/contracts/editor';
+import {
+  DEFAULT_IMAGE_RESOURCE_LIMITS,
+  sniffImageMime as sniffImageBytesMime,
+  validateRasterHeader,
+} from '@docx-editor.dev/core/editor';
 import { CN_OFFICIAL_SYMBOLS, charsToTwips } from './units';
 import type { OfficialFormatTab } from './OfficialFormatDialog';
 
@@ -44,33 +49,79 @@ const selectFontSizePt = (snapshot: EditorSnapshot): number => {
 const selectIsDisabled = (snapshot: EditorSnapshot): boolean =>
   snapshot.isLoading || snapshot.isOpening === true || !snapshot.editable;
 
-function sniffImageMime(file: File): SupportedImageMime | null {
-  if (file.type === 'image/png' || file.type === 'image/jpeg' || file.type === 'image/gif') {
-    return file.type;
-  }
-  const lower = file.name.toLowerCase();
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  if (lower.endsWith('.gif')) return 'image/gif';
-  return null;
+function isSupportedRasterMime(mime: string | null): mime is SupportedImageMime {
+  return mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/gif';
 }
 
-function readImageDimensions(blob: Blob): Promise<{ width: number; height: number }> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const w = img.naturalWidth || 320;
-      const h = img.naturalHeight || 200;
-      URL.revokeObjectURL(url);
-      resolve({ width: w, height: h });
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve({ width: 320, height: 200 });
-    };
-    img.src = url;
-  });
+function isClipboardPermissionError(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === 'NotAllowedError' || name === 'SecurityError';
+}
+
+async function writeClipboardRichChecked(text: string, html: string | null): Promise<boolean> {
+  if (!text && !html) return false;
+  const clipboard = navigator.clipboard;
+  if (!clipboard) return false;
+  if (html && typeof clipboard.write === 'function' && typeof ClipboardItem !== 'undefined') {
+    try {
+      const item = new ClipboardItem({
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+        'text/html': new Blob([html], { type: 'text/html' }),
+      });
+      await clipboard.write([item]);
+      return true;
+    } catch (err) {
+      if (isClipboardPermissionError(err)) return false;
+      // Only fall back to plain writeText when ClipboardItem/HTML MIME itself is unsupported.
+    }
+  }
+  if (typeof clipboard.writeText === 'function') {
+    try {
+      await clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+async function readClipboardPayload(
+  plainOnly: boolean
+): Promise<{ text: string; html: string | null }> {
+  const clipboard = navigator.clipboard;
+  if (!clipboard) throw new Error('clipboard unavailable');
+  if (!plainOnly && typeof clipboard.read === 'function' && typeof ClipboardItem !== 'undefined') {
+    try {
+      const items = await clipboard.read();
+      let text = '';
+      let html: string | null = null;
+      for (const item of items) {
+        if (item.types.includes('text/plain')) {
+          text = await (await item.getType('text/plain')).text();
+        }
+        if (item.types.includes('text/html')) {
+          html = await (await item.getType('text/html')).text();
+        }
+      }
+      if (text || html) return { text, html };
+    } catch (err) {
+      if (isClipboardPermissionError(err)) throw err;
+      // Fall through to readText when async clipboard.read() is unavailable or unsupported.
+    }
+  }
+  if (typeof clipboard.readText === 'function') {
+    return { text: await clipboard.readText(), html: null };
+  }
+  if (typeof clipboard.read === 'function') {
+    const items = await clipboard.read();
+    for (const item of items) {
+      if (item.types.includes('text/plain')) {
+        return { text: await (await item.getType('text/plain')).text(), html: null };
+      }
+    }
+  }
+  throw new Error('clipboard read unavailable');
 }
 
 /**
@@ -132,12 +183,22 @@ export const WpsQuickBar = defineComponent({
     const openPopover = ref<QuickPopover>('none');
     const tableHover = ref({ rows: 3, cols: 4 });
     const toastMsg = ref('');
+    const imageInsertBusy = ref(false);
     let toastTimer: number | null = null;
     let observer: MutationObserver | undefined;
 
-    const hasFirstLineIndent = computed(
-      () => (paragraph.format.value?.indentFirstLineTwips ?? 0) > 40
-    );
+    /**
+     * 精确区分「首行缩进 2 字符」与「1 字符 / 其它缩进 / 混选 / 未知」：
+     * 仅当选区非混选、已知缩进且与当前字号下 2 字符宽度误差 ≤ 20 twips（1pt）时才高亮为已开启。
+     */
+    const hasFirstLineIndent = computed(() => {
+      const pf = paragraph.format.value;
+      if (!pf || pf.indentUnknown || pf.disagrees.indentFirstLine) return false;
+      const fl = pf.indentFirstLineTwips;
+      if (fl === null || fl <= 0) return false;
+      const twoCharsTwips = charsToTwips(2, currentFontSizePt.value);
+      return Math.abs(fl - twoCharsTwips) <= 20;
+    });
 
     function showToast(message: string) {
       toastMsg.value = message;
@@ -183,17 +244,44 @@ export const WpsQuickBar = defineComponent({
       openPopover.value = openPopover.value === next ? 'none' : next;
     }
 
-    function runCopyOrCut(action: 'copy' | 'cut') {
+    async function runCopyOrCut(action: 'copy' | 'cut') {
       const ed = editorRef.value;
       if (!ed) return;
-      const selected = ed.query({ type: 'selectedText' });
-      const res = ed.exec({ type: action });
-      if (!res.ok) {
+      const gate = ed.can({ type: action });
+      if (!gate.ok) {
         showToast(action === 'copy' ? '请先选中要复制的内容' : '请先选中要剪切的内容');
         return;
       }
-      if (typeof selected === 'string' && selected.length > 0 && navigator.clipboard?.writeText) {
-        void navigator.clipboard.writeText(selected).catch(() => {});
+      const flavours = ed.query({ type: 'copyFlavours' });
+      if (!flavours || flavours.reason || (!flavours.text && !flavours.html)) {
+        showToast(action === 'copy' ? '当前选区不支持复制' : '当前选区不支持剪切');
+        return;
+      }
+      const beforeText = action === 'cut' ? ed.query({ type: 'selectedText' }) : '';
+      const wrote = await writeClipboardRichChecked(flavours.text, flavours.html);
+      if (!wrote) {
+        showToast(
+          action === 'copy'
+            ? '剪贴板写入被拒绝，请使用 Ctrl+C 复制'
+            : '剪贴板写入被拒绝，未删除所选内容（请使用 Ctrl+X）'
+        );
+        ed.focus();
+        return;
+      }
+      if (action === 'cut') {
+        // 再次确认选区仍有效后仅执行删除，避免二次写剪贴板覆盖富文本。
+        const currentText = ed.query({ type: 'selectedText' });
+        if (!ed.can({ type: 'cut' }).ok || (beforeText && currentText !== beforeText)) {
+          showToast('选区已变化，请重新剪切');
+          ed.focus();
+          return;
+        }
+        const delRes = ed.exec({ type: 'deleteText' });
+        if (!delRes.ok) {
+          showToast(`剪切失败：${delRes.reason || '当前位置不可编辑'}`);
+          ed.focus();
+          return;
+        }
       }
       showToast(action === 'copy' ? '已复制' : '已剪切');
       ed.focus();
@@ -203,22 +291,21 @@ export const WpsQuickBar = defineComponent({
       openPopover.value = 'none';
       const ed = editorRef.value;
       if (!ed) return;
-      if (!navigator.clipboard?.readText) {
+      if (!navigator.clipboard) {
         showToast('请直接使用快捷键 Ctrl+V / Ctrl+Shift+V 粘贴');
         ed.focus();
         return;
       }
       try {
-        const text = await navigator.clipboard.readText();
-        if (!text) {
+        const { text, html } = await readClipboardPayload(plainOnly);
+        if (!text && !html) {
           showToast('剪贴板为空');
           ed.focus();
           return;
         }
-        const cmd = plainOnly
-          ? ({ type: 'pasteWithoutFormatting', text } as const)
-          : ({ type: 'paste', text } as const);
-        const res = ed.exec(cmd);
+        const res = plainOnly
+          ? ed.exec({ type: 'pasteWithoutFormatting', text })
+          : ed.exec({ type: 'paste', text, ...(html ? { html } : {}) });
         if (!res.ok) {
           showToast(`粘贴失败：${res.reason || '当前位置不可编辑'}`);
         }
@@ -242,12 +329,18 @@ export const WpsQuickBar = defineComponent({
     function toggleTwoCharFirstLine() {
       const ed = editorRef.value;
       if (!ed) return;
-      const targetTwips = hasFirstLineIndent.value ? 0 : charsToTwips(2, currentFontSizePt.value);
-      const res = ed.exec({ type: 'setIndent', firstLine: targetTwips });
+      const turningOff = hasFirstLineIndent.value;
+      const targetChars = turningOff ? 0 : 200;
+      const targetTwips = turningOff ? 0 : charsToTwips(2, currentFontSizePt.value);
+      const res = ed.exec({
+        type: 'setParagraphFormat',
+        indentFirstLineChars: targetChars,
+        indentFirstLineTwips: targetTwips,
+      });
       if (!res.ok) {
         showToast('当前位置无法调整首行缩进');
       } else {
-        showToast(targetTwips > 0 ? '已设首行缩进 2 字符' : '已取消首行缩进');
+        showToast(turningOff ? '已取消首行缩进' : '已设首行缩进 2 字符');
       }
       ed.focus();
     }
@@ -270,31 +363,64 @@ export const WpsQuickBar = defineComponent({
       if (!file) return;
       const ed = editorRef.value;
       if (!ed) return;
-      const mime = sniffImageMime(file);
-      if (!mime) {
-        showToast('仅支持 PNG / JPG / GIF 图片');
+      if (imageInsertBusy.value) {
+        showToast('正在插入图片，请稍候');
         return;
       }
+      imageInsertBusy.value = true;
       try {
         const buf = await file.arrayBuffer();
         const bytes = new Uint8Array(buf);
-        const dims = await readImageDimensions(file);
-        const rawW = (dims.width * 72) / 96;
-        const rawH = (dims.height * 72) / 96;
-        const maxWidthPt = 420;
-        const scale = rawW > maxWidthPt ? maxWidthPt / rawW : 1;
-        const res = ed.exec({
+        const limits = DEFAULT_IMAGE_RESOURCE_LIMITS;
+        if (bytes.byteLength === 0) {
+          showToast('图片文件为空');
+          return;
+        }
+        if (bytes.byteLength > limits.maxEncodedBytes) {
+          showToast('图片体积超出限制');
+          return;
+        }
+        const sniffed = sniffImageBytesMime(bytes);
+        if (!isSupportedRasterMime(sniffed)) {
+          showToast('仅支持 PNG / JPG / GIF 图片');
+          return;
+        }
+        const header = validateRasterHeader(bytes, sniffed);
+        if (!header) {
+          showToast('图片文件头无效或已损坏');
+          return;
+        }
+        if (
+          header.pixelWidth * header.pixelHeight > limits.maxPixels ||
+          header.pixelWidth > limits.maxDimension ||
+          header.pixelHeight > limits.maxDimension
+        ) {
+          showToast('图片分辨率超出限制');
+          return;
+        }
+        const dpiX = header.dpiX ?? 96;
+        const dpiY = header.dpiY ?? 96;
+        const widthPoints = Math.max(1, Math.round(((header.pixelWidth * 72) / dpiX) * 100) / 100);
+        const heightPoints = Math.max(
+          1,
+          Math.round(((header.pixelHeight * 72) / dpiY) * 100) / 100
+        );
+        const res = await ed.executeImageCommand({
           type: 'insertImage',
           data: bytes,
-          mime,
-          widthPoints: Math.max(24, Math.round(rawW * scale)),
-          heightPoints: Math.max(24, Math.round(rawH * scale)),
+          mime: sniffed,
+          widthPoints,
+          heightPoints,
         });
         if (!res.ok) {
           showToast(`插入图片失败：${res.reason || '当前位置不支持'}`);
+        } else {
+          showToast('已插入图片');
         }
       } catch {
         showToast('读取图片失败');
+      } finally {
+        imageInsertBusy.value = false;
       }
       ed.focus();
     }
@@ -391,16 +517,16 @@ export const WpsQuickBar = defineComponent({
                     ]),
                     qBtn({
                       label: '复制',
-                      title: '复制选中文本 (Ctrl+C)',
+                      title: '复制选中内容 (Ctrl+C)',
                       testId: 'qbar-copy',
-                      onClick: () => runCopyOrCut('copy'),
+                      onClick: () => void runCopyOrCut('copy'),
                     }),
                     qBtn({
                       label: '剪切',
-                      title: '剪切选中文本 (Ctrl+X)',
+                      title: '剪切选中内容 (Ctrl+X)',
                       testId: 'qbar-cut',
                       disabled: isDisabled.value,
-                      onClick: () => runCopyOrCut('cut'),
+                      onClick: () => void runCopyOrCut('cut'),
                     }),
                   ]),
                   h('span', { class: 'weboffice-qbar__sep' }),

@@ -27,7 +27,6 @@ import { cascadeCompatibility } from './compatibility/cascade-compatibility.ts';
 import {
   canonicalOoxmlFingerprint,
   displayMathAlignment,
-  twipsToPoints,
   type OoxmlElement,
   type OoxmlNode,
 } from '@docx-editor.dev/core/store';
@@ -40,12 +39,15 @@ import {
 } from './cjk-typography.ts';
 import { getWpsCompatMode } from './wps-compat.ts';
 import {
-  indentTwips,
   paragraphAlignment,
   paragraphIndent,
   propertiesOf,
   type Alignment,
 } from './paragraph-flow.ts';
+import {
+  resolveParagraphCharIndentUnitPt,
+  resolveParagraphFirstLineIndent,
+} from './paragraph-indent.ts';
 import {
   cascadedParagraphBorders,
   paragraphContextualSpacing,
@@ -899,37 +901,27 @@ export function resolveParagraphLayoutInputs(
   const markOnly = propertiesOf(findRunProperties(pPr && isElement(pPr) ? pPr : undefined));
   const inheritedRunProperties = cascaded ? cascaded.runProperties : [];
   const markRunProperties = cascaded ? cascaded.markRunProperties : markOnly;
-  const baseIndent = paragraphIndent(props);
-  let hanging = 0;
-  let firstLine = 0;
-  if (listItem) {
-    hanging = listItem.indent.hanging;
-    firstLine = listItem.indent.firstLine;
-  } else {
-    for (const property of props) {
-      if (property.localName !== 'ind') continue;
-      // Both go through the clamp `w:left`/`w:right` already use. `w:ind` is
-      // attacker-controlled, and these two were the only indent attributes reaching
-      // geometry unbounded — `w:hanging="999999999"` resolved to 50,000,000pt.
-      const h = indentTwips(property.attributes?.hanging);
-      const f = indentTwips(property.attributes?.firstLine);
-      // `w:hanging` and `w:firstLine` are mutually exclusive spellings of one offset.
-      // Either stated attribute replaces both; otherwise an inherited hanging may survive
-      // firstLine="0" and shift body text into the margin. An ind with neither keeps the offset.
-      if (
-        property.attributes?.hanging !== undefined ||
-        property.attributes?.firstLine !== undefined
-      ) {
-        // `w:hanging` is `ST_TwipsMeasure`, unsigned: a negative one is not a measurement.
-        hanging = h !== null ? Math.max(0, twipsToPoints(h)) : 0;
-        // `w:firstLine` is DECLARED unsigned, but Word's model keeps one SIGNED first-line
-        // indent and the numbering reader already reads it that way (`numbering-index.ts`).
-        // Flattening a negative to zero here rendered a body paragraph flush where Word
-        // renders a hanging, and made the two readers disagree about the same attribute.
-        firstLine = f !== null ? twipsToPoints(f) : 0;
-      }
-    }
-  }
+  const hasCharIndent =
+    !listItem &&
+    props.some(
+      (property) =>
+        property.localName === 'ind' &&
+        (property.attributes?.firstLineChars !== undefined ||
+          property.attributes?.hangingChars !== undefined ||
+          property.attributes?.leftChars !== undefined ||
+          property.attributes?.rightChars !== undefined ||
+          property.attributes?.startChars !== undefined ||
+          property.attributes?.endChars !== undefined)
+    );
+  const charUnits = hasCharIndent
+    ? resolveParagraphCharIndentUnitPt(paragraph, markRunProperties, (directRunProps) =>
+        cascadeRunProperties(inheritedRunProperties, directRunProps, styleCascade)
+      )
+    : null;
+  const baseIndent = paragraphIndent(props, charUnits?.sideCharPt ?? 10);
+  const { hanging, firstLine } = listItem
+    ? { hanging: listItem.indent.hanging, firstLine: listItem.indent.firstLine }
+    : resolveParagraphFirstLineIndent(props, charUnits?.firstLineCharPt ?? 10);
   const indent = listItem
     ? {
         left: listItem.indent.left,
