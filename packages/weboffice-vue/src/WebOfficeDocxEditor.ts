@@ -95,6 +95,22 @@ export const WebOfficeDocxEditor = defineComponent({
       type: Boolean,
       default: true,
     },
+    /**
+     * 是否启用紧凑顶部栏样式，压缩菜单栏、工具栏、标尺与画布顶部留白以提升正文可视高度。
+     * 默认 `true`。
+     */
+    compactChrome: {
+      type: Boolean,
+      default: true,
+    },
+    /**
+     * 是否在编辑器内部显示文档标题行；宿主顶部栏已展示文件名时可设为 `false` 避免重复占高。
+     * 默认 `true`。
+     */
+    showTitle: {
+      type: Boolean,
+      default: true,
+    },
   },
   setup(props, { attrs, slots, expose }) {
     installLegacyPolyfills();
@@ -151,6 +167,8 @@ export const WebOfficeDocxEditor = defineComponent({
             'weboffice-host',
             props.chineseFontSize ? 'weboffice-host--cn-fontsize' : '',
             showStatusBar ? 'weboffice-host--statusbar' : '',
+            props.compactChrome ? 'weboffice-host--compact' : '',
+            !props.showTitle ? 'weboffice-host--hide-title' : '',
             attrClass,
           ],
         },

@@ -17,6 +17,67 @@
   display: none !important;
 }
 
+/* 隐藏编辑器内部重复标题行（用于宿主顶部已展示文件名的场景） */
+.weboffice-host--hide-title
+  .docx-editor
+  > div:first-child
+  > div:first-child
+  > div
+  > :first-child:not(.docx-menubar) {
+  display: none !important;
+}
+
+/* 紧凑顶部栏：压实菜单栏、主工具栏、快捷栏与标尺留白，让正文明显上提（保持标尺与页面原点对齐） */
+.weboffice-host--compact .docx-editor > div:first-child > div:first-child {
+  padding: 1px 10px 0 !important;
+  gap: 2px !important;
+}
+
+.weboffice-host--compact .docx-editor .docx-menubar__trigger {
+  padding: 1px 6px !important;
+  font-size: 12px !important;
+  line-height: 17px !important;
+}
+
+.weboffice-host--compact .docx-editor > div:first-child > div:nth-child(2) {
+  padding: 1px 10px 2px !important;
+}
+
+.weboffice-host--compact .docx-editor .docx-toolbar {
+  margin: 0 !important;
+  min-height: 30px !important;
+  padding: 1px 6px !important;
+  border-radius: 15px !important;
+}
+
+.weboffice-host--compact .weboffice-qbar {
+  padding: 2px 8px;
+  gap: 1px;
+}
+
+.weboffice-host--compact .weboffice-qbar__btn {
+  height: 22px;
+  line-height: 20px;
+  padding: 0 4px;
+}
+
+.weboffice-host--compact .docx-editor [data-testid='docx-editor-ruler-row'] {
+  min-height: 22px !important;
+  padding: 1px 0 !important;
+}
+
+.weboffice-host--compact .docx-editor .docx-editor-one-surface__viewport {
+  padding: 0 !important;
+}
+
+.weboffice-host--compact .weboffice-find-replace {
+  top: 76px;
+}
+
+.weboffice-host--compact.weboffice-host--hide-title .weboffice-find-replace {
+  top: 56px;
+}
+
 /* 中文字号 + A+/A- 替换原英文磅值步进器 */
 .weboffice-host--cn-fontsize .docx-toolbar__font-size-input,
 .weboffice-host--cn-fontsize [data-slot='font.size'] .docx-toolbar__stepper-button {
