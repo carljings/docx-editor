@@ -1,7 +1,8 @@
-import { computed, defineComponent, h, ref, type PropType } from 'vue';
+import { computed, defineComponent, h, ref, watchEffect, type PropType } from 'vue';
 import { DocxEditor, type DocxEditorProps, type DocxEditorRef } from '@docx-editor.dev/vue';
 import { zhCN, type Translations } from '@docx-editor.dev/i18n';
 import type { DocumentSource } from '@docx-editor.dev/core/contracts/editor';
+import { setWpsCompatMode, type WpsCompatOptions } from '@docx-editor.dev/core/layout';
 import { installLegacyPolyfills } from './polyfills';
 import {
   createOfficialFontResolver,
@@ -66,9 +67,21 @@ export const WebOfficeDocxEditor = defineComponent({
       type: Function as PropType<(snapshot: FontDiagnosticsSnapshot) => void>,
       default: undefined,
     },
+    /**
+     * 可选 WPS 中国版公文排版兼容模式（如左对齐中文段标点压缩）。
+     * 默认 `false` 保持与 MS Word 上游排版一致；需要对齐 WPS 打印基准时可显式开启。
+     */
+    wpsCompat: {
+      type: [Boolean, Object] as PropType<boolean | WpsCompatOptions>,
+      default: false,
+    },
   },
   setup(props, { attrs, slots, expose }) {
     installLegacyPolyfills();
+
+    watchEffect(() => {
+      setWpsCompatMode(props.wpsCompat);
+    });
 
     const hostEl = ref<HTMLElement | null>(null);
     const editorRef = ref<DocxEditorRef | null>(null);

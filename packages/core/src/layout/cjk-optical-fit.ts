@@ -713,7 +713,9 @@ export function createParagraphCjkOpticalFitter(
   const opticalParagraph = opticalPolicy && canFitCjkOptically(allPieces);
   const kanaParagraph = kanaPolicy && (opticalParagraph || canFitCjkOptically(allPieces));
   const localOpticalParagraph =
-    (opticalPolicy || kanaPolicy) && typography.settings?.punctuationKerning !== false;
+    (opticalPolicy || kanaPolicy) &&
+    (typography.settings?.punctuationKerning !== false ||
+      typography.settings?.wpsLeftPunctuationCompression === true);
   return {
     opticalParagraph,
     opticalCompression:

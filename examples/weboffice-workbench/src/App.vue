@@ -13,6 +13,11 @@ const DEFAULT_FILE_NAME = '日盯办报告-全指标模板.docx';
 const editorRef = ref<WebOfficeEditorHandle | null>(null);
 const docBytes = ref<Uint8Array | undefined>(undefined);
 const currentFileName = ref(DEFAULT_FILE_NAME);
+const wpsCompat = ref(
+  typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('wpsCompat') === '1'
+);
+const docRenderKey = ref(0);
 const statusText = ref('正在加载样稿...');
 const pageCount = ref(0);
 const firstPageCount = ref<number | null>(null);
@@ -54,9 +59,21 @@ const hitSummary = computed(() => {
     .join(' · ');
 });
 
+function toggleWpsCompat() {
+  wpsCompat.value = !wpsCompat.value;
+  firstPageCount.value = null;
+  settledPageCount.value = null;
+  docRenderKey.value += 1;
+  statusText.value = wpsCompat.value
+    ? '已开启 WPS 排版兼容（左对齐中文标点压缩）并重新排版'
+    : '已切回 MS Word 默认排版并重新排版';
+  publishDiag();
+}
+
 function publishDiag() {
   (window as unknown as Record<string, unknown>).__WEBOFFICE_DIAG__ = {
     fileName: currentFileName.value,
+    wpsCompat: wpsCompat.value,
     pageCount: pageCount.value,
     firstPageCount: firstPageCount.value,
     settledPageCount: settledPageCount.value,
@@ -177,6 +194,14 @@ onBeforeUnmount(() => {
         >
       </div>
       <div class="wb-actions">
+        <button
+          type="button"
+          class="wb-btn"
+          data-testid="toggle-wps-compat"
+          @click="toggleWpsCompat"
+        >
+          排版基准：{{ wpsCompat ? 'WPS 兼容' : 'Word 默认' }}
+        </button>
         <label class="wb-btn">
           打开本地 DOCX
           <input type="file" accept=".docx" hidden @change="onPickFile" />
@@ -219,11 +244,13 @@ onBeforeUnmount(() => {
     <main class="wb-stage">
       <WebOfficeDocxEditor
         v-if="docBytes"
+        :key="docRenderKey"
         ref="editorRef"
         :document="docBytes"
         :title="currentFileName"
         :font-options="fontOptions"
         :on-font-diagnostics="onFontDiagnostics"
+        :wps-compat="wpsCompat"
         mode="edit"
       />
     </main>

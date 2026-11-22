@@ -38,6 +38,7 @@ import {
   defaultsTypography,
   type CjkTypographySettings,
 } from './cjk-typography.ts';
+import { getWpsCompatMode } from './wps-compat.ts';
 import {
   indentTwips,
   paragraphAlignment,
@@ -486,6 +487,8 @@ export function buildStyleCascadeTable(
     typography = Object.freeze({ ...typography, legacyLineEndPunctuation: true as const });
   if (typography.balancedWidths && compatibility.has('balancedSpaceShrink'))
     typography = Object.freeze({ ...typography, balancedSpaceShrink: true as const });
+  if (getWpsCompatMode().leftAlignedPunctuationCompression)
+    typography = Object.freeze({ ...typography, wpsLeftPunctuationCompression: true as const });
   const ligaturesEnabled = compatibility.has('optionalLigatures');
   const ligatureCompatibility = ligaturesEnabled ? {} : { disableOptionalLigatures: true as const };
   const strictTableHierarchy = compatibility.has('strictTableStyleHierarchy');

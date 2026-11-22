@@ -50,6 +50,12 @@ export interface CjkTypographySettings {
    * @internal
    */
   readonly word97LineBreaks?: true;
+  /**
+   * Opt-in WPS China Edition compatibility (`setWpsCompatMode`): allow CJK optical punctuation
+   * compression and line-end punctuation hanging on left-aligned (`w:jc="left"`) paragraphs.
+   * @internal
+   */
+  readonly wpsLeftPunctuationCompression?: true;
   /** Whitespace compression selected by `w:characterSpacingControl`. */
   readonly compression:
     'doNotCompress' | 'compressPunctuation' | 'compressPunctuationAndJapaneseKana';
@@ -235,7 +241,11 @@ export function resolveCjkTypography(
   // paragraphs only.
   const eastAsianDefaults = settings?.sourceEastAsianFont === true;
   const hangingAlignment =
-    justified || settings?.legacyLineEndPunctuation === true ? eastAsianDefaults : false;
+    justified ||
+    settings?.legacyLineEndPunctuation === true ||
+    settings?.wpsLeftPunctuationCompression === true
+      ? eastAsianDefaults
+      : false;
   return {
     settings,
     kinsoku,

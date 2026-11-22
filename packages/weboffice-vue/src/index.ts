@@ -65,6 +65,11 @@ export {
   type FontOrigin,
   type FontUrlSource,
 } from '@docx-editor.dev/core/editor';
-export { setHarfBuzzWasmUrl } from '@docx-editor.dev/core/layout';
+export {
+  getWpsCompatMode,
+  setHarfBuzzWasmUrl,
+  setWpsCompatMode,
+  type WpsCompatOptions,
+} from '@docx-editor.dev/core/layout';
 export { packagedFonts } from '@docx-editor.dev/fonts';
 export { zhCN, type Translations } from '@docx-editor.dev/i18n';

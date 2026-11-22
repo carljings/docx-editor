@@ -287,7 +287,10 @@ function breakPreparedParagraphLines(request: ParagraphBreakRequest): readonly P
         request.compatibilityMode,
         'koreanHangingLineFills'
       ),
-      cjkPunctuationFit: paragraphAlignment(formatting.props) === 'both',
+      cjkPunctuationFit:
+        paragraphAlignment(formatting.props) === 'both' ||
+        (styleCascade?.typography?.wpsLeftPunctuationCompression === true &&
+          paragraphAlignment(formatting.props) === 'left'),
       lineSpacing:
         formatting.lineSpacing.rule === 'auto' &&
         formatting.lineSpacing.value > 240 &&
