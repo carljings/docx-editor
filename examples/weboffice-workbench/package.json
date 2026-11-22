@@ -1,0 +1,21 @@
+{
+  "name": "weboffice-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5188",
+    "build": "vite build",
+    "preview": "vite preview --port 5188"
+  },
+  "dependencies": {
+    "@weboffice/vue": "workspace:*",
+    "vue": "^3.5.45"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.11",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.8"
+  }
+}

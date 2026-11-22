@@ -1,0 +1,6 @@
+# 严禁提交未获网页分发授权的商业字体或本机 WPS 字体
+public/fonts/wps/
+public/fonts/*.ttf
+public/fonts/*.otf
+!public/fonts/fandol/**
+dist/

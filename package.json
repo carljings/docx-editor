@@ -28,6 +28,7 @@
     "examples/document-refresh",
     "examples/anchor-navigation",
     "examples/popout-window",
+    "examples/weboffice-workbench",
     "benchmarks/collaboration-server"
   ],
   "type": "module",
@@ -167,7 +168,11 @@
     "dev:refresh": "bun run --filter './examples/document-refresh' dev",
     "dev:anchors": "bun run --filter './examples/anchor-navigation' dev",
     "dev:popout": "bun run --filter './examples/popout-window' dev",
-    "compare:scorecard": "bun scripts/compare-corpus/scorecard.ts"
+    "compare:scorecard": "bun scripts/compare-corpus/scorecard.ts",
+    "weboffice:check-license": "node scripts/check-weboffice-apache-only.mjs",
+    "weboffice:build": "bun run --filter '@docx-editor.dev/i18n' build && bun run --filter '@docx-editor.dev/core' build && bun run --filter '@docx-editor.dev/fonts' build && bun run --filter '@docx-editor.dev/fonts-cjk' build && bun run --filter '@docx-editor.dev/vue' build && bun run --filter '@weboffice/vue' build && bun run weboffice:check-license",
+    "weboffice:test": "bun run weboffice:check-license && bun run --filter '@weboffice/vue' typecheck && bun run --filter '@weboffice/vue' test && bun run --filter 'weboffice-workbench' build",
+    "weboffice:dev": "bun run --filter 'weboffice-workbench' dev"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",

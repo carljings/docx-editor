@@ -1,0 +1,46 @@
+{
+  "name": "@weboffice/vue",
+  "version": "0.1.0",
+  "description": "Pure Apache-2.0 Vue 3 WebOffice DOCX editor adapter for Chinese official documents and domestic browsers (Xinchuang).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./polyfills": {
+      "types": "./dist/polyfills.d.ts",
+      "import": "./dist/polyfills.js",
+      "require": "./dist/polyfills.cjs"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup && node -e \"const fs=require('fs'); const base=fs.readFileSync(require.resolve('@docx-editor.dev/vue/styles.css'),'utf8'); const extra=fs.readFileSync('src/styles.css','utf8'); fs.writeFileSync('dist/styles.css', base + '\\n' + extra);\"",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./src/__tests__/weboffice.test.ts"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "dependencies": {
+    "@docx-editor.dev/core": "workspace:*",
+    "@docx-editor.dev/fonts": "workspace:*",
+    "@docx-editor.dev/fonts-cjk": "workspace:*",
+    "@docx-editor.dev/i18n": "workspace:*",
+    "@docx-editor.dev/vue": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vue": "^3.5.45"
+  }
+}
