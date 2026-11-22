@@ -682,10 +682,12 @@
 
 .weboffice-statusbar__popover {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
+  bottom: 34px;
+  left: 8px;
   z-index: 2200;
+  box-sizing: border-box;
   width: 210px;
+  max-width: calc(100% - 16px);
   padding: 10px 12px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;

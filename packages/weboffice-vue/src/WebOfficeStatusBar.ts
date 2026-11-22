@@ -60,8 +60,33 @@ export const WebOfficeStatusBar = defineComponent({
     const stats = ref<DocumentWordStats>(EMPTY_STATS);
     const statsOpen = ref(false);
     const barRef = ref<HTMLElement | null>(null);
+    const wordBtnRef = ref<HTMLButtonElement | null>(null);
+    const popoverRef = ref<HTMLElement | null>(null);
+    const popoverPos = ref<{ left: number; bottom: number; width: number }>({
+      left: 8,
+      bottom: 34,
+      width: 210,
+    });
     let statsTimer: number | null = null;
     let scrollEl: HTMLElement | null = null;
+
+    function updatePopoverPosition() {
+      const host = props.hostElement;
+      const btn = wordBtnRef.value;
+      if (!host || !btn) return;
+      const hostRect = host.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      const width = Math.min(220, Math.max(168, Math.floor(hostRect.width - 16)));
+      const rawLeft = btnRect.left - hostRect.left;
+      const maxLeft = Math.max(8, hostRect.width - width - 8);
+      const left = Math.max(8, Math.min(rawLeft, maxLeft));
+      const bottom = Math.max(32, hostRect.bottom - btnRect.top + 6);
+      popoverPos.value = {
+        left: Math.round(left),
+        bottom: Math.round(bottom),
+        width: Math.round(width),
+      };
+    }
 
     function recomputeStats() {
       const ed = editorRef.value;
@@ -133,17 +158,31 @@ export const WebOfficeStatusBar = defineComponent({
     function onOutsideClick(event: PointerEvent) {
       if (!statsOpen.value) return;
       const target = event.target instanceof Node ? event.target : null;
-      if (target && barRef.value?.contains(target)) return;
+      if (target && (barRef.value?.contains(target) || popoverRef.value?.contains(target))) return;
       statsOpen.value = false;
+    }
+
+    function onWindowResize() {
+      if (statsOpen.value) updatePopoverPosition();
+    }
+
+    function onKeydown(event: KeyboardEvent) {
+      if (event.key === 'Escape' && statsOpen.value) {
+        statsOpen.value = false;
+      }
     }
 
     onMounted(() => {
       document.addEventListener('pointerdown', onOutsideClick, true);
+      window.addEventListener('resize', onWindowResize);
+      window.addEventListener('keydown', onKeydown);
       bindViewportScroll();
     });
 
     onBeforeUnmount(() => {
       document.removeEventListener('pointerdown', onOutsideClick, true);
+      window.removeEventListener('resize', onWindowResize);
+      window.removeEventListener('keydown', onKeydown);
       if (statsTimer !== null) window.clearTimeout(statsTimer);
       if (scrollEl) scrollEl.removeEventListener('scroll', syncCurrentPage);
     });
@@ -175,6 +214,46 @@ export const WebOfficeStatusBar = defineComponent({
       const cur = Math.min(Math.max(currentPage.value, 1), total);
 
       return h(Teleport, { to: props.hostElement }, [
+        statsOpen.value
+          ? h(
+              'div',
+              {
+                ref: popoverRef,
+                class: 'weboffice-statusbar__popover',
+                'data-testid': 'statusbar-wordcount-detail',
+                role: 'dialog',
+                'aria-label': '文档字数统计',
+                style: {
+                  left: `${popoverPos.value.left}px`,
+                  bottom: `${popoverPos.value.bottom}px`,
+                  width: `${popoverPos.value.width}px`,
+                },
+              },
+              [
+                h('div', { class: 'weboffice-statusbar__pop-title' }, '文档字数统计'),
+                h('div', { class: 'weboffice-statusbar__pop-row' }, [
+                  h('span', '总字数（不计空格）'),
+                  h('strong', String(stats.value.totalCharsNoSpace)),
+                ]),
+                h('div', { class: 'weboffice-statusbar__pop-row' }, [
+                  h('span', '中文字符与标点'),
+                  h('strong', String(stats.value.cjkChars)),
+                ]),
+                h('div', { class: 'weboffice-statusbar__pop-row' }, [
+                  h('span', '英文与数字词数'),
+                  h('strong', String(stats.value.latinWords)),
+                ]),
+                h('div', { class: 'weboffice-statusbar__pop-row' }, [
+                  h('span', '字符数（计空格）'),
+                  h('strong', String(stats.value.totalCharsWithSpace)),
+                ]),
+                h('div', { class: 'weboffice-statusbar__pop-row' }, [
+                  h('span', '段落数'),
+                  h('strong', String(stats.value.paragraphCount)),
+                ]),
+              ]
+            )
+          : null,
         h(
           'footer',
           {
@@ -182,6 +261,9 @@ export const WebOfficeStatusBar = defineComponent({
             class: 'weboffice-statusbar',
             'data-testid': 'weboffice-statusbar',
             role: 'status',
+            onScroll: () => {
+              if (statsOpen.value) updatePopoverPosition();
+            },
           },
           [
             h('div', { class: 'weboffice-statusbar__left' }, [
@@ -198,49 +280,21 @@ export const WebOfficeStatusBar = defineComponent({
                 h(
                   'button',
                   {
+                    ref: wordBtnRef,
                     type: 'button',
                     class: 'weboffice-statusbar__btn',
                     'data-testid': 'statusbar-wordcount',
+                    'aria-expanded': statsOpen.value,
                     title: '点击查看详细字数统计',
                     onClick: () => {
                       recomputeStats();
-                      statsOpen.value = !statsOpen.value;
+                      const next = !statsOpen.value;
+                      if (next) updatePopoverPosition();
+                      statsOpen.value = next;
                     },
                   },
                   `字数：${stats.value.totalCharsNoSpace}`
                 ),
-                statsOpen.value
-                  ? h(
-                      'div',
-                      {
-                        class: 'weboffice-statusbar__popover',
-                        'data-testid': 'statusbar-wordcount-detail',
-                      },
-                      [
-                        h('div', { class: 'weboffice-statusbar__pop-title' }, '文档字数统计'),
-                        h('div', { class: 'weboffice-statusbar__pop-row' }, [
-                          h('span', '总字数（不计空格）'),
-                          h('strong', String(stats.value.totalCharsNoSpace)),
-                        ]),
-                        h('div', { class: 'weboffice-statusbar__pop-row' }, [
-                          h('span', '中文字符与标点'),
-                          h('strong', String(stats.value.cjkChars)),
-                        ]),
-                        h('div', { class: 'weboffice-statusbar__pop-row' }, [
-                          h('span', '英文与数字词数'),
-                          h('strong', String(stats.value.latinWords)),
-                        ]),
-                        h('div', { class: 'weboffice-statusbar__pop-row' }, [
-                          h('span', '字符数（计空格）'),
-                          h('strong', String(stats.value.totalCharsWithSpace)),
-                        ]),
-                        h('div', { class: 'weboffice-statusbar__pop-row' }, [
-                          h('span', '段落数'),
-                          h('strong', String(stats.value.paragraphCount)),
-                        ]),
-                      ]
-                    )
-                  : null,
               ]),
               h('span', { class: 'weboffice-statusbar__div' }),
               h('span', { class: 'weboffice-statusbar__item' }, modeLabel.value),

@@ -15,7 +15,12 @@ import {
   useEditorState,
   useParagraphFormat,
 } from '@docx-editor.dev/vue';
-import type { EditorSnapshot, SupportedImageMime } from '@docx-editor.dev/core/contracts/editor';
+import type {
+  Editor,
+  EditorSelectionRange,
+  EditorSnapshot,
+  SupportedImageMime,
+} from '@docx-editor.dev/core/contracts/editor';
 import {
   DEFAULT_IMAGE_RESOURCE_LIMITS,
   sniffImageMime as sniffImageBytesMime,
@@ -48,6 +53,72 @@ const selectFontSizePt = (snapshot: EditorSnapshot): number => {
 
 const selectIsDisabled = (snapshot: EditorSnapshot): boolean =>
   snapshot.isLoading || snapshot.isOpening === true || !snapshot.editable;
+
+interface CutPrecondition {
+  readonly editor: Editor;
+  readonly loadId: string;
+  readonly revision: number;
+  readonly range: EditorSelectionRange | null;
+  readonly drawingNodeId: string | null;
+  readonly selectionKey: string;
+  readonly tableKey: string;
+  readonly selectedText: string;
+}
+
+function sameSelectionRange(
+  a: EditorSelectionRange | null,
+  b: EditorSelectionRange | null
+): boolean {
+  if (a === null || b === null) return a === b;
+  return (
+    a.anchor.blockId === b.anchor.blockId &&
+    a.anchor.offset === b.anchor.offset &&
+    a.head.blockId === b.head.blockId &&
+    a.head.offset === b.head.offset &&
+    JSON.stringify(a.scope) === JSON.stringify(b.scope)
+  );
+}
+
+function captureCutPrecondition(ed: Editor, drawingNodeId: string | null): CutPrecondition | null {
+  try {
+    const handle = ed.getDocumentHandle();
+    const snap = ed.snapshot();
+    if (!handle || !handle.loadId || !snap.editable || snap.isLoading || snap.isOpening) {
+      return null;
+    }
+    return {
+      editor: ed,
+      loadId: handle.loadId,
+      revision: handle.revision,
+      range: ed.getSelectionRange(),
+      drawingNodeId,
+      selectionKey: JSON.stringify(snap.selection ?? null),
+      tableKey: JSON.stringify(snap.table ?? null),
+      selectedText: ed.query({ type: 'selectedText' }),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function matchesCutPrecondition(before: CutPrecondition, currentEditor: Editor | null): boolean {
+  if (!currentEditor || currentEditor !== before.editor) return false;
+  try {
+    const handle = currentEditor.getDocumentHandle();
+    const snap = currentEditor.snapshot();
+    if (!handle || !snap.editable || snap.isLoading || snap.isOpening) return false;
+    if (handle.loadId !== before.loadId || handle.revision !== before.revision) return false;
+    if (!sameSelectionRange(before.range, currentEditor.getSelectionRange())) return false;
+    if (JSON.stringify(snap.selection ?? null) !== before.selectionKey) return false;
+    if (JSON.stringify(snap.table ?? null) !== before.tableKey) return false;
+    const afterFlavours = currentEditor.query({ type: 'copyFlavours' });
+    if ((afterFlavours?.drawingNodeId ?? null) !== before.drawingNodeId) return false;
+    if (currentEditor.query({ type: 'selectedText' }) !== before.selectedText) return false;
+    return currentEditor.can({ type: 'cut' }).ok;
+  } catch {
+    return false;
+  }
+}
 
 function isSupportedRasterMime(mime: string | null): mime is SupportedImageMime {
   return mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/gif';
@@ -184,6 +255,7 @@ export const WpsQuickBar = defineComponent({
     const tableHover = ref({ rows: 3, cols: 4 });
     const toastMsg = ref('');
     const imageInsertBusy = ref(false);
+    let cutSeq = 0;
     let toastTimer: number | null = null;
     let observer: MutationObserver | undefined;
 
@@ -257,7 +329,13 @@ export const WpsQuickBar = defineComponent({
         showToast(action === 'copy' ? '当前选区不支持复制' : '当前选区不支持剪切');
         return;
       }
-      const beforeText = action === 'cut' ? ed.query({ type: 'selectedText' }) : '';
+      const cutTicket = action === 'cut' ? ++cutSeq : 0;
+      const cutPrecondition =
+        action === 'cut' ? captureCutPrecondition(ed, flavours.drawingNodeId ?? null) : null;
+      if (action === 'cut' && !cutPrecondition) {
+        showToast('当前文档状态不稳定，请重新剪切');
+        return;
+      }
       const wrote = await writeClipboardRichChecked(flavours.text, flavours.html);
       if (!wrote) {
         showToast(
@@ -265,26 +343,29 @@ export const WpsQuickBar = defineComponent({
             ? '剪贴板写入被拒绝，请使用 Ctrl+C 复制'
             : '剪贴板写入被拒绝，未删除所选内容（请使用 Ctrl+X）'
         );
-        ed.focus();
+        if (editorRef.value === ed) ed.focus();
         return;
       }
       if (action === 'cut') {
-        // 再次确认选区仍有效后仅执行删除，避免二次写剪贴板覆盖富文本。
-        const currentText = ed.query({ type: 'selectedText' });
-        if (!ed.can({ type: 'cut' }).ok || (beforeText && currentText !== beforeText)) {
-          showToast('选区已变化，请重新剪切');
-          ed.focus();
+        // 严格核对文档身份、修订号、完整选区锚点及并发票据；任一变化均取消删除，绝不误删后选内容。
+        if (
+          cutTicket !== cutSeq ||
+          !cutPrecondition ||
+          !matchesCutPrecondition(cutPrecondition, editorRef.value)
+        ) {
+          showToast('选区或文档已变化，内容已复制但未删除');
+          if (editorRef.value === ed) ed.focus();
           return;
         }
         const delRes = ed.exec({ type: 'deleteText' });
         if (!delRes.ok) {
           showToast(`剪切失败：${delRes.reason || '当前位置不可编辑'}`);
-          ed.focus();
+          if (editorRef.value === ed) ed.focus();
           return;
         }
       }
       showToast(action === 'copy' ? '已复制' : '已剪切');
-      ed.focus();
+      if (editorRef.value === ed) ed.focus();
     }
 
     async function runPaste(plainOnly: boolean) {
