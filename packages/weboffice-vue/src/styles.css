@@ -120,8 +120,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 12px 6px;
+  gap: 3px;
+  padding: 4px 10px 6px;
   border-top: 1px solid #eceff4;
   background: #f8fafc;
   color: #1f2328;
@@ -132,19 +132,19 @@
 .weboffice-qbar__group {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
 }
 
 .weboffice-qbar__sep {
   width: 1px;
-  height: 16px;
-  margin: 0 4px;
+  height: 15px;
+  margin: 0 2px;
   background: #d8dee6;
 }
 
 .weboffice-qbar__btn {
   height: 24px;
-  padding: 0 7px;
+  padding: 0 5px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
@@ -267,20 +267,289 @@
   border-color: #2563eb;
 }
 
-.weboffice-qbar__symbols {
+.weboffice-qbar__symbols-wrap {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
+  right: 0;
   z-index: 2100;
-  width: 236px;
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 3px;
+  width: min(244px, calc(100vw - 16px));
   padding: 6px;
   border: 1px solid #d0d7de;
   border-radius: 6px;
   background: #ffffff;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+.weboffice-qbar__symbols-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+}
+
+.weboffice-qbar__breaks-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.weboffice-qbar__section-title {
+  padding: 2px 4px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.weboffice-qbar__menu--num {
+  width: min(230px, calc(100vw - 16px));
+}
+
+.weboffice-qbar__num-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.weboffice-qbar__num-sample {
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.weboffice-qbar__num-sub {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.weboffice-qbar__menu--borders {
+  width: min(224px, calc(100vw - 16px));
+}
+
+.weboffice-qbar__border-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.weboffice-qbar__border-preview {
+  display: inline-block;
+  width: 24px;
+  height: 14px;
+  border-radius: 2px;
+  background: #f8fafc;
+  box-sizing: border-box;
+  flex: none;
+}
+
+.weboffice-qbar__border-preview.is-bottom-thin {
+  border-bottom: 1.5px solid #334155;
+}
+
+.weboffice-qbar__border-preview.is-official-red {
+  border-bottom: 3px solid #dc2626;
+}
+
+.weboffice-qbar__border-preview.is-official-double-red {
+  border-bottom: 4px double #dc2626;
+}
+
+.weboffice-qbar__border-preview.is-box {
+  border: 1.5px solid #64748b;
+}
+
+.weboffice-qbar__border-preview.is-none {
+  border: 1px dashed #cbd5e1;
+}
+
+.weboffice-qbar__swatches {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 2px 4px 4px;
+}
+
+.weboffice-qbar__swatch {
+  height: 24px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: #475569;
+  background: #ffffff;
+}
+
+.weboffice-qbar__swatch:hover {
+  border-color: #2563eb;
+  transform: translateY(-1px);
+}
+
+.weboffice-qbar__menu--effects {
+  width: min(272px, calc(100vw - 16px));
+  padding: 6px;
+}
+
+.weboffice-qbar__u-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+}
+
+.weboffice-qbar__u-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1f2328;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.weboffice-qbar__u-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.weboffice-qbar__u-sample {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+  text-underline-offset: 2px;
+}
+
+.weboffice-qbar__u-sample.is-single {
+  text-decoration: underline solid #1e293b 1.5px;
+}
+
+.weboffice-qbar__u-sample.is-double {
+  text-decoration: underline double #1e293b 1.5px;
+}
+
+.weboffice-qbar__u-sample.is-thick {
+  text-decoration: underline solid #1e293b 2.5px;
+}
+
+.weboffice-qbar__u-sample.is-dotted {
+  text-decoration: underline dotted #1e293b 1.5px;
+}
+
+.weboffice-qbar__u-sample.is-dash {
+  text-decoration: underline dashed #1e293b 1.5px;
+}
+
+.weboffice-qbar__u-sample.is-dotDash {
+  border-bottom: 1.5px dashed #1e293b;
+}
+
+.weboffice-qbar__u-sample.is-wave {
+  text-decoration: underline wavy #dc2626 1.2px;
+}
+
+.weboffice-qbar__u-sample.is-none {
+  color: #64748b;
+}
+
+.weboffice-qbar__u-label {
+  font-size: 11px;
+  color: #334155;
+}
+
+.weboffice-qbar__cspace-grid,
+.weboffice-qbar__table-ctx-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+}
+
+.weboffice-qbar__chip-btn {
+  padding: 5px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #1f2328;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.weboffice-qbar__chip-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.weboffice-qbar__chip-btn.is-active {
+  background: #dbeafe;
+  border-color: #60a5fa;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.weboffice-qbar__chip-btn.is-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.weboffice-qbar__chip-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.weboffice-qbar__custom-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.weboffice-qbar__custom-label,
+.weboffice-qbar__custom-unit {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.weboffice-qbar__custom-input {
+  width: 64px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #0f172a;
+}
+
+.weboffice-qbar__custom-apply {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.weboffice-qbar__table-ctx {
+  min-width: 176px;
+}
+
+.weboffice-dialog__check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  font-size: 12px;
+  color: #334155;
+  cursor: pointer;
 }
 
 .weboffice-qbar__symbol-btn {

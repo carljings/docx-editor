@@ -7,7 +7,7 @@
 // composition root.
 
 import type { TreeApplyResult, TreeDocxSessionView } from '@docx-editor.dev/core/binding';
-import { writeFirstLineChars } from './paragraph-format-indent.ts';
+import { buildPresetListOps, writeFirstLineChars } from './paragraph-format-indent.ts';
 import {
   findNode,
   type OoxmlElement,
@@ -611,23 +611,29 @@ export function createSurfaceStructure(deps: SurfaceStructureDeps): StructureMet
       );
     },
 
-    toggleList(kind) {
+    toggleList(kind, preset) {
       const touched = targetParagraphs();
       if (touched === null || touched.length === 0) return false;
-      const ops = listToggleOps(
-        {
-          listSwitch,
-          listStyle,
-          leaveOp: listNumbering.leaveOp,
-          levelOf: listLevelOf,
-          kindOf: listKindOf,
-          styleCascade: deps.styleCascade,
-          indentOf: listSwitch.indentOf,
-          defaultTabStopPt: deps.defaultTabStopPt,
-        },
-        touched,
-        kind
-      );
+      const ops =
+        preset !== undefined
+          ? buildPresetListOps(touched, preset, {
+              ensureListDefinition: (k, g, p) => session.ensureListDefinition(k, g, p),
+              leaveOp: listNumbering.leaveOp,
+            })
+          : listToggleOps(
+              {
+                listSwitch,
+                listStyle,
+                leaveOp: listNumbering.leaveOp,
+                levelOf: listLevelOf,
+                kindOf: listKindOf,
+                styleCascade: deps.styleCascade,
+                indentOf: listSwitch.indentOf,
+                defaultTabStopPt: deps.defaultTabStopPt,
+              },
+              touched,
+              kind
+            );
       if (ops === null) return false;
       return commitOverTarget(() => applyOps(ops, selectionMark()));
     },
@@ -726,16 +732,24 @@ export function createSurfaceStructure(deps: SurfaceStructureDeps): StructureMet
           entries.push({ localName, attributes: paragraphFlagAttributes(on) });
         }
       }
-      // Tab stops ride the SAME transaction as the properties above, so the dialog is still
-      // one undo step. They are a separate op because `w:tabs` carries `w:tab` children and
-      // a property is flat — see `applySetParagraphTabStops`.
+      if (update.shading !== undefined) {
+        entries.push(
+          update.shading === null
+            ? { localName: 'shd', remove: true }
+            : {
+                localName: 'shd',
+                attributes: { val: 'clear', color: 'auto', fill: update.shading.toUpperCase() },
+              }
+        );
+      }
       const wantsTabStops = update.tabStops !== undefined;
+      const wantsBorders = update.borders !== undefined;
       const wantsIndent =
         update.indentLeftTwips !== undefined ||
         update.indentRightTwips !== undefined ||
         update.indentFirstLineTwips !== undefined ||
         update.indentFirstLineChars !== undefined;
-      if (entries.length === 0 && !wantsIndent && !wantsTabStops) return false;
+      if (entries.length === 0 && !wantsIndent && !wantsTabStops && !wantsBorders) return false;
 
       const ops: TreeDocOp[] = [];
       for (const paragraphId of touched) {
@@ -802,6 +816,9 @@ export function createSurfaceStructure(deps: SurfaceStructureDeps): StructureMet
         // makes a repeat of that mistake harmless for edits that name no property.
         if (wrote || wantsIndent) {
           ops.push({ op: 'setParagraphProperties', paragraphId, properties });
+        }
+        if (wantsBorders) {
+          ops.push({ op: 'setParagraphBorders', paragraphId, edges: update.borders! });
         }
         if (wantsTabStops) {
           // What the editor SAW, so the op can tell an inherited stop from an authored

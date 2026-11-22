@@ -1,4 +1,5 @@
 import { isInsertableText } from './tree-op-inline-elements.ts';
+import { validateSectionColumnsWrite } from './tree-op-section-cols.ts';
 import { validateSetLegacyDropdown } from './legacy-dropdown-fields.ts';
 import { validateBookmarkOp } from './tree-op-bookmarks.ts';
 import { validateHyperlinkRange } from './tree-op-hyperlink-range.ts';
@@ -449,8 +450,12 @@ export function validateTreeOp(
     if (
       dims.every((value) => value === undefined) &&
       margins.every((value) => value === undefined) &&
-      op.orientation === undefined
+      op.orientation === undefined &&
+      op.columns === undefined
     ) {
+      return 'invalid-property-value';
+    }
+    if (op.columns !== undefined && validateSectionColumnsWrite(op.columns) !== null) {
       return 'invalid-property-value';
     }
     for (const value of dims) {

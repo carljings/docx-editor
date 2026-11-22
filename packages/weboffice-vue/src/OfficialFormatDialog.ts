@@ -6,7 +6,6 @@ import {
   useParagraphFormat,
 } from '@docx-editor.dev/vue';
 import type { EditorSnapshot } from '@docx-editor.dev/core/contracts/editor';
-import type { PageSetupUpdate, ParagraphFormatUpdate } from '@docx-editor.dev/vue';
 import {
   GB_T_9704_MARGINS_CM,
   OFFICIAL_PAPER_SIZES,
@@ -15,6 +14,14 @@ import {
   twipsToChars,
   twipsToCm,
 } from './units';
+import {
+  buildPageSetupUpdate,
+  buildParagraphFormatUpdate,
+  renderDialogNumInput,
+  type AlignDraft,
+  type LineRuleDraft,
+  type SpecialKindDraft,
+} from './official-dialog-helpers';
 
 export type OfficialFormatTab = 'paragraph' | 'page';
 
@@ -22,10 +29,6 @@ const selectCurrentFontSizePt = (snapshot: EditorSnapshot): number => {
   const pt = snapshot.formatting?.fontSizePt;
   return typeof pt === 'number' && pt > 0 ? pt : 16;
 };
-
-type AlignDraft = '' | 'left' | 'center' | 'right' | 'justify';
-type SpecialKindDraft = '' | 'none' | 'firstLine' | 'hanging';
-type LineRuleDraft = '' | 'exact' | 'atLeast' | 'multiple';
 
 /**
  * 中文公文排版设置对话框（厘米 / 字符 / 磅）：
@@ -107,6 +110,9 @@ export const OfficialFormatDialog = defineComponent({
     const marginBottomStr = ref(String(GB_T_9704_MARGINS_CM.bottom));
     const marginLeftStr = ref(String(GB_T_9704_MARGINS_CM.left));
     const marginRightStr = ref(String(GB_T_9704_MARGINS_CM.right));
+    const columnsCount = ref<1 | 2 | 3>(1);
+    const columnsSpaceStr = ref('0.75');
+    const columnsSeparator = ref(false);
     const pageScope = ref<'document' | 'section'>('document');
 
     const pageDirty = reactive({
@@ -116,6 +122,7 @@ export const OfficialFormatDialog = defineComponent({
       marginBottom: false,
       marginLeft: false,
       marginRight: false,
+      columns: false,
     });
 
     function resetDirty() {
@@ -133,6 +140,7 @@ export const OfficialFormatDialog = defineComponent({
       pageDirty.marginBottom = false;
       pageDirty.marginLeft = false;
       pageDirty.marginRight = false;
+      pageDirty.columns = false;
     }
 
     function seedFromEditor() {
@@ -221,6 +229,11 @@ export const OfficialFormatDialog = defineComponent({
         marginBottomStr.value = String(twipsToCm(ps.marginsTwips.bottom));
         marginLeftStr.value = String(twipsToCm(ps.marginsTwips.left));
         marginRightStr.value = String(twipsToCm(ps.marginsTwips.right));
+        const colCount = ps.columns?.count ?? 1;
+        columnsCount.value = colCount >= 3 ? 3 : colCount === 2 ? 2 : 1;
+        columnsSpaceStr.value =
+          ps.columns && ps.columns.gapTwips > 0 ? String(twipsToCm(ps.columns.gapTwips)) : '0.75';
+        columnsSeparator.value = Boolean(ps.columns?.separator);
       }
     }
 
@@ -316,88 +329,25 @@ export const OfficialFormatDialog = defineComponent({
       editorRef.value?.focus();
     }
 
-    function parseNonNegative(raw: string, fallback = 0): number | null {
-      const trimmed = raw.trim();
-      if (trimmed === '') return null;
-      const n = Number(trimmed);
-      if (!Number.isFinite(n) || n < 0) return fallback;
-      return n;
-    }
-
     function handleSubmit(e: Event) {
       e.preventDefault();
       errorText.value = '';
 
       if (activeTab.value === 'paragraph') {
-        const update: { -readonly [K in keyof ParagraphFormatUpdate]: ParagraphFormatUpdate[K] } =
-          {};
-        let hasChanges = false;
-
-        if (paraDirty.align && align.value !== '') {
-          update.alignment = align.value;
-          hasChanges = true;
-        }
-        if (paraDirty.indentLeft) {
-          const val = parseNonNegative(indentLeftStr.value);
-          if (val !== null) {
-            update.indentLeftTwips = cmToTwips(Math.min(50, val));
-            hasChanges = true;
-          }
-        }
-        if (paraDirty.indentRight) {
-          const val = parseNonNegative(indentRightStr.value);
-          if (val !== null) {
-            update.indentRightTwips = cmToTwips(Math.min(50, val));
-            hasChanges = true;
-          }
-        }
-        if (paraDirty.special && specialKind.value !== '') {
-          const fontPt = currentFontSizePt.value;
-          if (specialKind.value === 'none') {
-            update.indentFirstLineChars = 0;
-            update.indentFirstLineTwips = 0;
-            hasChanges = true;
-          } else {
-            const rawVal = parseNonNegative(specialValStr.value) ?? 0;
-            const sign = specialKind.value === 'hanging' ? -1 : 1;
-            if (specialUnit.value === 'chars') {
-              const charsHundredths = Math.round(Math.min(50, rawVal) * 100);
-              update.indentFirstLineChars = sign * charsHundredths;
-              update.indentFirstLineTwips = sign * charsToTwips(Math.min(50, rawVal), fontPt);
-            } else {
-              update.indentFirstLineTwips = sign * cmToTwips(Math.min(50, rawVal));
-            }
-            hasChanges = true;
-          }
-        }
-        if (paraDirty.spaceBefore) {
-          const val = parseNonNegative(spaceBeforeStr.value);
-          if (val !== null) {
-            update.spaceBeforePt = Math.min(1584, val);
-            hasChanges = true;
-          }
-        }
-        if (paraDirty.spaceAfter) {
-          const val = parseNonNegative(spaceAfterStr.value);
-          if (val !== null) {
-            update.spaceAfterPt = Math.min(1584, val);
-            hasChanges = true;
-          }
-        }
-        if (paraDirty.lineSpacing && lineRule.value !== '') {
-          const rawVal = Number(lineValStr.value);
-          if (Number.isFinite(rawVal)) {
-            update.lineSpacing = {
-              rule: lineRule.value,
-              value:
-                lineRule.value === 'multiple'
-                  ? Math.max(0.5, Math.min(10, rawVal))
-                  : Math.max(6, Math.min(200, rawVal)),
-            };
-            hasChanges = true;
-          }
-        }
-
+        const { update, hasChanges } = buildParagraphFormatUpdate({
+          dirty: paraDirty,
+          align: align.value,
+          indentLeftStr: indentLeftStr.value,
+          indentRightStr: indentRightStr.value,
+          specialKind: specialKind.value,
+          specialUnit: specialUnit.value,
+          specialValStr: specialValStr.value,
+          spaceBeforeStr: spaceBeforeStr.value,
+          spaceAfterStr: spaceAfterStr.value,
+          lineRule: lineRule.value,
+          lineValStr: lineValStr.value,
+          fontPt: currentFontSizePt.value,
+        });
         if (!hasChanges) {
           handleClose();
           return;
@@ -411,64 +361,32 @@ export const OfficialFormatDialog = defineComponent({
         return;
       }
 
-      // 页面设置：仅提交被用户改动过的字段，绝不覆写自定义纸张或未改动项
-      const pageUpdate: { -readonly [K in keyof PageSetupUpdate]: PageSetupUpdate[K] } = {};
-      let hasPageChanges = false;
-
-      if (pageDirty.paper) {
-        if (paperId.value === 'custom' && customPaperSize.value) {
-          const base = customPaperSize.value;
-          pageUpdate.pageWidthTwips =
-            orientation.value === 'landscape' ? base.heightTwips : base.widthTwips;
-          pageUpdate.pageHeightTwips =
-            orientation.value === 'landscape' ? base.widthTwips : base.heightTwips;
-          pageUpdate.orientation = orientation.value;
-          hasPageChanges = true;
-        } else {
-          const paper = OFFICIAL_PAPER_SIZES.find((p) => p.id === paperId.value);
-          if (paper) {
-            pageUpdate.pageWidthTwips =
-              orientation.value === 'landscape' ? paper.heightTwips : paper.widthTwips;
-            pageUpdate.pageHeightTwips =
-              orientation.value === 'landscape' ? paper.widthTwips : paper.heightTwips;
-            pageUpdate.orientation = orientation.value;
-            hasPageChanges = true;
-          }
-        }
-      } else if (pageDirty.orientation) {
-        // 仅改纸张方向时不带固定宽高，让引擎按各节自身尺寸翻转，保护分节自定义纸型
-        pageUpdate.orientation = orientation.value;
-        hasPageChanges = true;
+      const {
+        update: pageUpdate,
+        hasChanges,
+        error,
+      } = buildPageSetupUpdate({
+        dirty: pageDirty,
+        paperId: paperId.value,
+        customPaperSize: customPaperSize.value,
+        orientation: orientation.value,
+        marginTopStr: marginTopStr.value,
+        marginBottomStr: marginBottomStr.value,
+        marginLeftStr: marginLeftStr.value,
+        marginRightStr: marginRightStr.value,
+        columnsCount: columnsCount.value,
+        columnsSpaceStr: columnsSpaceStr.value,
+        columnsSeparator: columnsSeparator.value,
+        scope: pageScope.value,
+      });
+      if (error) {
+        errorText.value = error;
+        return;
       }
-
-      const marginChecks: ReadonlyArray<{
-        dirty: boolean;
-        raw: string;
-        key: 'marginTopTwips' | 'marginBottomTwips' | 'marginLeftTwips' | 'marginRightTwips';
-      }> = [
-        { dirty: pageDirty.marginTop, raw: marginTopStr.value, key: 'marginTopTwips' },
-        { dirty: pageDirty.marginBottom, raw: marginBottomStr.value, key: 'marginBottomTwips' },
-        { dirty: pageDirty.marginLeft, raw: marginLeftStr.value, key: 'marginLeftTwips' },
-        { dirty: pageDirty.marginRight, raw: marginRightStr.value, key: 'marginRightTwips' },
-      ];
-
-      for (const item of marginChecks) {
-        if (!item.dirty) continue;
-        const val = Number(item.raw);
-        if (!Number.isFinite(val) || val < 0 || val > 25) {
-          errorText.value = '请输入合法的页边距数值（0 ~ 25 厘米）';
-          return;
-        }
-        pageUpdate[item.key] = cmToTwips(val);
-        hasPageChanges = true;
-      }
-
-      if (!hasPageChanges) {
+      if (!hasChanges) {
         handleClose();
         return;
       }
-
-      pageUpdate.scope = pageScope.value;
       const ok = pageSetup.apply(pageUpdate);
       if (!ok) {
         errorText.value = '当前文档无法应用页面设置（请检查页边距是否过大或处于只读模式）';
@@ -477,38 +395,7 @@ export const OfficialFormatDialog = defineComponent({
       handleClose();
     }
 
-    const numInput = (
-      label: string,
-      value: string,
-      onChange: (next: string) => void,
-      opts: {
-        min?: number;
-        max?: number;
-        unit?: string;
-        testId?: string;
-        placeholder?: string;
-      } = {}
-    ) =>
-      h('label', { class: 'weboffice-dialog__field' }, [
-        h('span', { class: 'weboffice-dialog__label' }, label),
-        h('span', { class: 'weboffice-dialog__input-wrap' }, [
-          h('input', {
-            type: 'number',
-            inputmode: 'decimal',
-            class: 'weboffice-dialog__input',
-            'data-testid': opts.testId,
-            step: 'any',
-            min: opts.min ?? 0,
-            max: opts.max ?? 50,
-            placeholder: opts.placeholder,
-            value,
-            onInput: (e: Event) => {
-              onChange((e.target as HTMLInputElement).value);
-            },
-          }),
-          opts.unit ? h('span', { class: 'weboffice-dialog__unit' }, opts.unit) : null,
-        ]),
-      ]);
+    const numInput = renderDialogNumInput;
 
     return () => {
       if (!props.open || !props.hostElement) return null;
@@ -924,6 +811,64 @@ export const OfficialFormatDialog = defineComponent({
                           testId: 'page-margin-right',
                         }
                       ),
+                      h('label', { class: 'weboffice-dialog__field' }, [
+                        h('span', { class: 'weboffice-dialog__label' }, '页面分栏'),
+                        h(
+                          'select',
+                          {
+                            class: 'weboffice-dialog__select',
+                            'data-testid': 'page-columns-count',
+                            value: String(columnsCount.value),
+                            onChange: (e: Event) => {
+                              const n = Number((e.target as HTMLSelectElement).value);
+                              columnsCount.value = n === 3 ? 3 : n === 2 ? 2 : 1;
+                              pageDirty.columns = true;
+                            },
+                          },
+                          [
+                            h('option', { value: '1' }, '一栏（默认）'),
+                            h('option', { value: '2' }, '两栏'),
+                            h('option', { value: '3' }, '三栏'),
+                          ]
+                        ),
+                      ]),
+                      h('label', { class: 'weboffice-dialog__field' }, [
+                        h('span', { class: 'weboffice-dialog__label' }, '栏间距'),
+                        h('span', { class: 'weboffice-dialog__input-wrap' }, [
+                          h('input', {
+                            type: 'number',
+                            inputmode: 'decimal',
+                            class: 'weboffice-dialog__input',
+                            'data-testid': 'page-columns-space',
+                            disabled: columnsCount.value <= 1,
+                            step: 'any',
+                            min: 0,
+                            max: 10,
+                            value: columnsSpaceStr.value,
+                            onInput: (e: Event) => {
+                              columnsSpaceStr.value = (e.target as HTMLInputElement).value;
+                              pageDirty.columns = true;
+                            },
+                          }),
+                          h('span', { class: 'weboffice-dialog__unit' }, '厘米'),
+                        ]),
+                      ]),
+                      h('label', { class: 'weboffice-dialog__field' }, [
+                        h('span', { class: 'weboffice-dialog__label' }, '栏间分隔线'),
+                        h('span', { class: 'weboffice-dialog__check-row' }, [
+                          h('input', {
+                            type: 'checkbox',
+                            'data-testid': 'page-columns-sep',
+                            disabled: columnsCount.value <= 1,
+                            checked: columnsSeparator.value,
+                            onChange: (e: Event) => {
+                              columnsSeparator.value = (e.target as HTMLInputElement).checked;
+                              pageDirty.columns = true;
+                            },
+                          }),
+                          h('span', null, '在分栏间显示竖线'),
+                        ]),
+                      ]),
                       h('label', { class: 'weboffice-dialog__field' }, [
                         h('span', { class: 'weboffice-dialog__label' }, '应用于'),
                         h(

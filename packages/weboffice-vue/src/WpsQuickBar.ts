@@ -15,12 +15,9 @@ import {
   useEditorState,
   useParagraphFormat,
 } from '@docx-editor.dev/vue';
-import type {
-  Editor,
-  EditorSelectionRange,
-  EditorSnapshot,
-  SupportedImageMime,
-} from '@docx-editor.dev/core/contracts/editor';
+import type { EditorSnapshot } from '@docx-editor.dev/core/contracts/editor';
+import type { ToggleListPreset } from '@docx-editor.dev/core/contracts/types';
+import type { ParagraphBorderEdgeWrite } from '@docx-editor.dev/core/store';
 import {
   DEFAULT_IMAGE_RESOURCE_LIMITS,
   sniffImageMime as sniffImageBytesMime,
@@ -28,8 +25,23 @@ import {
 } from '@docx-editor.dev/core/editor';
 import { CN_OFFICIAL_SYMBOLS, charsToTwips } from './units';
 import type { OfficialFormatTab } from './OfficialFormatDialog';
+import {
+  captureCutPrecondition,
+  isSupportedRasterMime,
+  matchesCutPrecondition,
+  readClipboardPayload,
+  writeClipboardRichChecked,
+} from './qbar-clipboard';
+import type { UnderlineStylePreset } from './p1-presets';
+import {
+  renderBordersMenu,
+  renderNumberingMenu,
+  renderTableContextSection,
+  renderTextEffectsMenu,
+} from './qbar-p1-menus';
 
-type QuickPopover = 'none' | 'lineSpacing' | 'table' | 'symbols' | 'paste';
+type QuickPopover =
+  'none' | 'lineSpacing' | 'numbering' | 'borders' | 'textEffects' | 'table' | 'symbols' | 'paste';
 
 const LINE_SPACING_PRESETS: ReadonlyArray<{
   readonly label: string;
@@ -54,154 +66,12 @@ const selectFontSizePt = (snapshot: EditorSnapshot): number => {
 const selectIsDisabled = (snapshot: EditorSnapshot): boolean =>
   snapshot.isLoading || snapshot.isOpening === true || !snapshot.editable;
 
-interface CutPrecondition {
-  readonly editor: Editor;
-  readonly loadId: string;
-  readonly revision: number;
-  readonly range: EditorSelectionRange | null;
-  readonly drawingNodeId: string | null;
-  readonly selectionKey: string;
-  readonly tableKey: string;
-  readonly selectedText: string;
-}
-
-function sameSelectionRange(
-  a: EditorSelectionRange | null,
-  b: EditorSelectionRange | null
-): boolean {
-  if (a === null || b === null) return a === b;
-  return (
-    a.anchor.blockId === b.anchor.blockId &&
-    a.anchor.offset === b.anchor.offset &&
-    a.head.blockId === b.head.blockId &&
-    a.head.offset === b.head.offset &&
-    JSON.stringify(a.scope) === JSON.stringify(b.scope)
-  );
-}
-
-function captureCutPrecondition(ed: Editor, drawingNodeId: string | null): CutPrecondition | null {
-  try {
-    const handle = ed.getDocumentHandle();
-    const snap = ed.snapshot();
-    if (!handle || !handle.loadId || !snap.editable || snap.isLoading || snap.isOpening) {
-      return null;
-    }
-    return {
-      editor: ed,
-      loadId: handle.loadId,
-      revision: handle.revision,
-      range: ed.getSelectionRange(),
-      drawingNodeId,
-      selectionKey: JSON.stringify(snap.selection ?? null),
-      tableKey: JSON.stringify(snap.table ?? null),
-      selectedText: ed.query({ type: 'selectedText' }),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function matchesCutPrecondition(before: CutPrecondition, currentEditor: Editor | null): boolean {
-  if (!currentEditor || currentEditor !== before.editor) return false;
-  try {
-    const handle = currentEditor.getDocumentHandle();
-    const snap = currentEditor.snapshot();
-    if (!handle || !snap.editable || snap.isLoading || snap.isOpening) return false;
-    if (handle.loadId !== before.loadId || handle.revision !== before.revision) return false;
-    if (!sameSelectionRange(before.range, currentEditor.getSelectionRange())) return false;
-    if (JSON.stringify(snap.selection ?? null) !== before.selectionKey) return false;
-    if (JSON.stringify(snap.table ?? null) !== before.tableKey) return false;
-    const afterFlavours = currentEditor.query({ type: 'copyFlavours' });
-    if ((afterFlavours?.drawingNodeId ?? null) !== before.drawingNodeId) return false;
-    if (currentEditor.query({ type: 'selectedText' }) !== before.selectedText) return false;
-    return currentEditor.can({ type: 'cut' }).ok;
-  } catch {
-    return false;
-  }
-}
-
-function isSupportedRasterMime(mime: string | null): mime is SupportedImageMime {
-  return mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/gif';
-}
-
-function isClipboardPermissionError(err: unknown): boolean {
-  const name = (err as { name?: unknown } | null)?.name;
-  return name === 'NotAllowedError' || name === 'SecurityError';
-}
-
-async function writeClipboardRichChecked(text: string, html: string | null): Promise<boolean> {
-  if (!text && !html) return false;
-  const clipboard = navigator.clipboard;
-  if (!clipboard) return false;
-  if (html && typeof clipboard.write === 'function' && typeof ClipboardItem !== 'undefined') {
-    try {
-      const item = new ClipboardItem({
-        'text/plain': new Blob([text], { type: 'text/plain' }),
-        'text/html': new Blob([html], { type: 'text/html' }),
-      });
-      await clipboard.write([item]);
-      return true;
-    } catch (err) {
-      if (isClipboardPermissionError(err)) return false;
-      // Only fall back to plain writeText when ClipboardItem/HTML MIME itself is unsupported.
-    }
-  }
-  if (typeof clipboard.writeText === 'function') {
-    try {
-      await clipboard.writeText(text);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
-
-async function readClipboardPayload(
-  plainOnly: boolean
-): Promise<{ text: string; html: string | null }> {
-  const clipboard = navigator.clipboard;
-  if (!clipboard) throw new Error('clipboard unavailable');
-  if (!plainOnly && typeof clipboard.read === 'function' && typeof ClipboardItem !== 'undefined') {
-    try {
-      const items = await clipboard.read();
-      let text = '';
-      let html: string | null = null;
-      for (const item of items) {
-        if (item.types.includes('text/plain')) {
-          text = await (await item.getType('text/plain')).text();
-        }
-        if (item.types.includes('text/html')) {
-          html = await (await item.getType('text/html')).text();
-        }
-      }
-      if (text || html) return { text, html };
-    } catch (err) {
-      if (isClipboardPermissionError(err)) throw err;
-      // Fall through to readText when async clipboard.read() is unavailable or unsupported.
-    }
-  }
-  if (typeof clipboard.readText === 'function') {
-    return { text: await clipboard.readText(), html: null };
-  }
-  if (typeof clipboard.read === 'function') {
-    const items = await clipboard.read();
-    for (const item of items) {
-      if (item.types.includes('text/plain')) {
-        return { text: await (await item.getType('text/plain')).text(), html: null };
-      }
-    }
-  }
-  throw new Error('clipboard read unavailable');
-}
+const selectInTable = (snapshot: EditorSnapshot): boolean => snapshot.table !== null;
 
 /**
- * WPS 风格公文快捷增强工具栏（挂载于主工具栏下方，补齐 WPS 顶部栏高频 P0 能力）：
- * - 剪贴板：复制 / 剪切 / 粘贴 / 无格式粘贴
- * - 段落平铺对齐（左/中/右/两端） + 显示/隐藏段落标记 ¶
- * - 公文快捷排版：固定值行距（28/29/30 磅） / 首行缩进 2 字符一键切换 / 段落与页面设置（厘米/字符）
- * - 快捷插入：可视化表格网格 / 本地图片 / 公文常用符号
- * - 查找与替换直达入口
+ * WPS 风格公文快捷增强工具栏（挂载于主工具栏下方，补齐 WPS 顶部栏高频 P0 + P1 能力）：
+ * - P0：剪贴板（富文本复制/剪切/粘贴/无格式粘贴）、平铺对齐与段落标记 ¶、公文行距/首行2字符/厘米页面设置、表格网格/本地图片/公文符号、查找替换
+ * - P1：GB/T 9704 中文公文编号（一、/（一）/1./（1））、段落边框（含公文红线/双红线）与底纹、下划线线型与字符间距、分页/分节符直达、表格上下文操作
  */
 export const WpsQuickBar = defineComponent({
   name: 'WpsQuickBar',
@@ -239,6 +109,8 @@ export const WpsQuickBar = defineComponent({
     // oxlint-disable-next-line react/rules-of-hooks
     const tableInsertCmd = useEditorCommand('table.insert');
     // oxlint-disable-next-line react/rules-of-hooks
+    const tableMergeCmd = useEditorCommand('table.mergeCells');
+    // oxlint-disable-next-line react/rules-of-hooks
     const imageInsertCmd = useEditorCommand('image.insert');
     // oxlint-disable-next-line react/rules-of-hooks
     const paragraph = useParagraphFormat();
@@ -246,6 +118,8 @@ export const WpsQuickBar = defineComponent({
     const currentFontSizePt = useEditorState(selectFontSizePt);
     // oxlint-disable-next-line react/rules-of-hooks
     const isDisabled = useEditorState(selectIsDisabled);
+    // oxlint-disable-next-line react/rules-of-hooks
+    const inTable = useEditorState(selectInTable);
 
     const anchorRef = ref<HTMLElement | null>(null);
     const chromeBandEl = shallowRef<HTMLElement | null>(null);
@@ -253,16 +127,13 @@ export const WpsQuickBar = defineComponent({
     const fileInputRef = ref<HTMLInputElement | null>(null);
     const openPopover = ref<QuickPopover>('none');
     const tableHover = ref({ rows: 3, cols: 4 });
+    const customSpacingPt = ref('1.5');
     const toastMsg = ref('');
     const imageInsertBusy = ref(false);
     let cutSeq = 0;
     let toastTimer: number | null = null;
     let observer: MutationObserver | undefined;
 
-    /**
-     * 精确区分「首行缩进 2 字符」与「1 字符 / 其它缩进 / 混选 / 未知」：
-     * 仅当选区非混选、已知缩进且与当前字号下 2 字符宽度误差 ≤ 20 twips（1pt）时才高亮为已开启。
-     */
     const hasFirstLineIndent = computed(() => {
       const pf = paragraph.format.value;
       if (!pf || pf.indentUnknown || pf.disagrees.indentFirstLine) return false;
@@ -347,7 +218,6 @@ export const WpsQuickBar = defineComponent({
         return;
       }
       if (action === 'cut') {
-        // 严格核对文档身份、修订号、完整选区锚点及并发票据；任一变化均取消删除，绝不误删后选内容。
         if (
           cutTicket !== cutSeq ||
           !cutPrecondition ||
@@ -401,9 +271,7 @@ export const WpsQuickBar = defineComponent({
       const ed = editorRef.value;
       if (!ed) return;
       const res = ed.exec({ type: 'setLineSpacing', rule, value });
-      if (!res.ok) {
-        showToast('无法设置行距');
-      }
+      if (!res.ok) showToast('无法设置行距');
       ed.focus();
     }
 
@@ -426,13 +294,143 @@ export const WpsQuickBar = defineComponent({
       ed.focus();
     }
 
+    function applyNumberingPreset(preset: ToggleListPreset) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'toggleList', kind: 'ordered', preset });
+      if (!res.ok) {
+        showToast('当前位置无法设置编号');
+      } else {
+        showToast(preset === 'clear' ? '已取消编号' : '已应用公文编号');
+      }
+      ed.focus();
+    }
+
+    function applyParagraphBorder(edges: readonly ParagraphBorderEdgeWrite[], label: string) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'setParagraphFormat', borders: edges });
+      if (!res.ok) {
+        showToast('当前位置无法设置段落边框');
+      } else {
+        showToast(`已应用${label}`);
+      }
+      ed.focus();
+    }
+
+    function applyParagraphShading(hex: string | null, label: string) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'setParagraphFormat', shading: hex });
+      if (!res.ok) {
+        showToast('当前位置无法设置段落底纹');
+      } else {
+        showToast(hex === null ? '已清除段落底纹' : `已设底纹：${label}`);
+      }
+      ed.focus();
+    }
+
+    function applyUnderlineVariant(value: UnderlineStylePreset['value'], label: string) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'setMarkAttr', mark: 'underline', attr: 'val', value });
+      if (!res.ok) {
+        showToast('当前位置无法设置下划线样式');
+      } else {
+        showToast(value === 'none' ? '已取消下划线' : `已设${label}`);
+      }
+      ed.focus();
+    }
+
+    function applyCharSpacing(twips: number, label: string) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({
+        type: 'setMarkAttr',
+        mark: 'characterSpacing',
+        attr: 'val',
+        value: twips,
+      });
+      if (!res.ok) {
+        showToast('当前位置无法设置字符间距');
+      } else {
+        showToast(`已设字符间距：${label}`);
+      }
+      ed.focus();
+    }
+
+    function applyCustomCharSpacing() {
+      const pt = Number(customSpacingPt.value);
+      if (!Number.isFinite(pt) || pt < -20 || pt > 100) {
+        showToast('请输入 -20 ~ 100 磅之间的字符间距');
+        return;
+      }
+      applyCharSpacing(Math.round(pt * 20), `${pt} 磅`);
+    }
+
+    function runTableContextAction(
+      action:
+        | 'mergeCells'
+        | 'toggleHeaderRow'
+        | 'rowAbove'
+        | 'rowBelow'
+        | 'colLeft'
+        | 'colRight'
+        | 'deleteRow'
+        | 'deleteTable'
+    ) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res =
+        action === 'mergeCells'
+          ? ed.exec({ type: 'mergeCells' })
+          : action === 'toggleHeaderRow'
+            ? ed.exec({ type: 'toggleHeaderRow' })
+            : action === 'rowAbove'
+              ? ed.exec({ type: 'insertRow', where: 'above' })
+              : action === 'rowBelow'
+                ? ed.exec({ type: 'insertRow', where: 'below' })
+                : action === 'colLeft'
+                  ? ed.exec({ type: 'insertColumn', where: 'left' })
+                  : action === 'colRight'
+                    ? ed.exec({ type: 'insertColumn', where: 'right' })
+                    : action === 'deleteRow'
+                      ? ed.exec({ type: 'deleteRow' })
+                      : ed.exec({ type: 'deleteTable' });
+      if (!res.ok) {
+        showToast(res.reason || '当前表格位置无法执行此操作');
+      } else if (action === 'toggleHeaderRow') {
+        showToast('已切换跨页重复表头行');
+      } else if (action === 'mergeCells') {
+        showToast('已合并选中单元格');
+      }
+      ed.focus();
+    }
+
     function insertTable(rows: number, cols: number) {
       openPopover.value = 'none';
       const ed = editorRef.value;
       if (!ed) return;
       const res = ed.exec({ type: 'insertTable', rows, cols });
+      if (!res.ok) showToast('当前位置无法插入表格');
+      ed.focus();
+    }
+
+    function insertBreakKind(kind: 'page' | 'section') {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'insertBreak', kind });
       if (!res.ok) {
-        showToast('当前位置无法插入表格');
+        showToast(res.reason || '当前位置无法插入分隔符');
+      } else {
+        showToast(kind === 'page' ? '已插入分页符' : '已插入下一页分节符');
       }
       ed.focus();
     }
@@ -511,9 +509,7 @@ export const WpsQuickBar = defineComponent({
       const ed = editorRef.value;
       if (!ed) return;
       const res = ed.exec({ type: 'replaceText', text: char });
-      if (!res.ok) {
-        showToast('当前位置无法插入符号');
-      }
+      if (!res.ok) showToast('当前位置无法插入符号');
       ed.focus();
     }
 
@@ -657,7 +653,7 @@ export const WpsQuickBar = defineComponent({
                   ]),
                   h('span', { class: 'weboffice-qbar__sep' }),
 
-                  // 3. 公文快捷排版组
+                  // 3. 公文快捷排版组（P0 + P1）
                   h('div', { class: 'weboffice-qbar__group' }, [
                     h('div', { class: 'weboffice-qbar__dropdown' }, [
                       qBtn({
@@ -710,9 +706,59 @@ export const WpsQuickBar = defineComponent({
                       disabled: isDisabled.value,
                       onClick: toggleTwoCharFirstLine,
                     }),
+                    h('div', { class: 'weboffice-qbar__dropdown' }, [
+                      qBtn({
+                        label: '编号 ▾',
+                        title: '中文公文编号样式（一、/（一）/1./（1））',
+                        testId: 'qbar-cn-numbering',
+                        active: openPopover.value === 'numbering',
+                        disabled: isDisabled.value,
+                        onClick: () => togglePopover('numbering'),
+                      }),
+                      openPopover.value === 'numbering'
+                        ? renderNumberingMenu(applyNumberingPreset)
+                        : null,
+                    ]),
+                    h('div', { class: 'weboffice-qbar__dropdown' }, [
+                      qBtn({
+                        label: '框线 ▾',
+                        title: '段落边框（含公文红线/双红线）与段落底纹',
+                        testId: 'qbar-para-border',
+                        active: openPopover.value === 'borders',
+                        disabled: isDisabled.value,
+                        onClick: () => togglePopover('borders'),
+                      }),
+                      openPopover.value === 'borders'
+                        ? renderBordersMenu({
+                            onApplyBorder: applyParagraphBorder,
+                            onApplyShading: applyParagraphShading,
+                          })
+                        : null,
+                    ]),
+                    h('div', { class: 'weboffice-qbar__dropdown' }, [
+                      qBtn({
+                        label: '字效 ▾',
+                        title: '下划线线型与字符间距调节',
+                        testId: 'qbar-text-effects',
+                        active: openPopover.value === 'textEffects',
+                        disabled: isDisabled.value,
+                        onClick: () => togglePopover('textEffects'),
+                      }),
+                      openPopover.value === 'textEffects'
+                        ? renderTextEffectsMenu({
+                            customSpacingPt: customSpacingPt.value,
+                            onUpdateCustomPt: (val) => {
+                              customSpacingPt.value = val;
+                            },
+                            onApplyUnderline: applyUnderlineVariant,
+                            onApplyCharSpacing: applyCharSpacing,
+                            onApplyCustomSpacing: applyCustomCharSpacing,
+                          })
+                        : null,
+                    ]),
                     qBtn({
                       label: '页面(cm)',
-                      title: '页面设置（厘米 / GB/T 9704 公文标准页边距）',
+                      title: '页面设置与分栏（厘米 / GB/T 9704 公文标准页边距 / 多栏）',
                       testId: 'qbar-page-setup-cm',
                       disabled: isDisabled.value,
                       onClick: () => {
@@ -723,46 +769,60 @@ export const WpsQuickBar = defineComponent({
                   ]),
                   h('span', { class: 'weboffice-qbar__sep' }),
 
-                  // 4. 快捷插入组
+                  // 4. 快捷插入组（表格含上下文操作 + 本地图片 + 符号与分页/分节符）
                   h('div', { class: 'weboffice-qbar__group' }, [
                     h('div', { class: 'weboffice-qbar__dropdown' }, [
                       qBtn({
-                        label: '表格 ▾',
-                        title: '插入表格',
+                        label: inTable.value ? '表格✦▾' : '表格 ▾',
+                        title: inTable.value
+                          ? '表格操作（合并单元格/重复表头行/插删行列）与插入新表'
+                          : '插入表格',
                         testId: 'qbar-insert-table',
-                        active: openPopover.value === 'table',
-                        disabled: !tableInsertCmd.isEnabled.value,
+                        active: openPopover.value === 'table' || inTable.value,
+                        disabled:
+                          isDisabled.value || (!tableInsertCmd.isEnabled.value && !inTable.value),
                         onClick: () => togglePopover('table'),
                       }),
                       openPopover.value === 'table'
                         ? h('div', { class: 'weboffice-qbar__table-grid' }, [
-                            h(
-                              'div',
-                              { class: 'weboffice-qbar__table-label' },
-                              `插入 ${tableHover.value.rows} × ${tableHover.value.cols} 表格`
-                            ),
-                            h(
-                              'div',
-                              { class: 'weboffice-qbar__grid-cells' },
-                              Array.from({ length: 6 * 8 }, (_, idx) => {
-                                const r = Math.floor(idx / 8) + 1;
-                                const c = (idx % 8) + 1;
-                                const active =
-                                  r <= tableHover.value.rows && c <= tableHover.value.cols;
-                                return h('button', {
-                                  key: `${r}x${c}`,
-                                  type: 'button',
-                                  class: ['weboffice-qbar__grid-cell', active ? 'is-on' : ''],
-                                  'data-testid': `table-cell-${r}x${c}`,
-                                  'aria-label': `${r} 行 ${c} 列`,
-                                  onMousedown: keepFocus,
-                                  onMouseenter: () => {
-                                    tableHover.value = { rows: r, cols: c };
-                                  },
-                                  onClick: () => insertTable(r, c),
-                                });
-                              })
-                            ),
+                            inTable.value
+                              ? renderTableContextSection({
+                                  canMerge: tableMergeCmd.isEnabled.value,
+                                  isHeaderRow: false,
+                                  onAction: runTableContextAction,
+                                })
+                              : null,
+                            tableInsertCmd.isEnabled.value
+                              ? h('div', null, [
+                                  h(
+                                    'div',
+                                    { class: 'weboffice-qbar__table-label' },
+                                    `插入 ${tableHover.value.rows} × ${tableHover.value.cols} 表格`
+                                  ),
+                                  h(
+                                    'div',
+                                    { class: 'weboffice-qbar__grid-cells' },
+                                    Array.from({ length: 6 * 8 }, (_, idx) => {
+                                      const r = Math.floor(idx / 8) + 1;
+                                      const c = (idx % 8) + 1;
+                                      const active =
+                                        r <= tableHover.value.rows && c <= tableHover.value.cols;
+                                      return h('button', {
+                                        key: `${r}x${c}`,
+                                        type: 'button',
+                                        class: ['weboffice-qbar__grid-cell', active ? 'is-on' : ''],
+                                        'data-testid': `table-cell-${r}x${c}`,
+                                        'aria-label': `${r} 行 ${c} 列`,
+                                        onMousedown: keepFocus,
+                                        onMouseenter: () => {
+                                          tableHover.value = { rows: r, cols: c };
+                                        },
+                                        onClick: () => insertTable(r, c),
+                                      });
+                                    })
+                                  ),
+                                ])
+                              : null,
                           ])
                         : null,
                     ]),
@@ -786,31 +846,60 @@ export const WpsQuickBar = defineComponent({
                     h('div', { class: 'weboffice-qbar__dropdown' }, [
                       qBtn({
                         label: '符号 ▾',
-                        title: '插入公文常用符号',
+                        title: '插入分页符、分节符与公文常用符号',
                         testId: 'qbar-symbols',
                         active: openPopover.value === 'symbols',
                         disabled: isDisabled.value,
                         onClick: () => togglePopover('symbols'),
                       }),
                       openPopover.value === 'symbols'
-                        ? h(
-                            'div',
-                            { class: 'weboffice-qbar__symbols' },
-                            CN_OFFICIAL_SYMBOLS.map((sym) =>
+                        ? h('div', { class: 'weboffice-qbar__symbols-wrap' }, [
+                            h('div', { class: 'weboffice-qbar__section-title' }, '分隔符'),
+                            h('div', { class: 'weboffice-qbar__breaks-row' }, [
                               h(
                                 'button',
                                 {
-                                  key: sym.char,
                                   type: 'button',
-                                  class: 'weboffice-qbar__symbol-btn',
-                                  title: sym.label,
+                                  class: 'weboffice-qbar__chip-btn',
+                                  'data-testid': 'qbar-insert-page-break',
                                   onMousedown: keepFocus,
-                                  onClick: () => insertSymbol(sym.char),
+                                  onClick: () => insertBreakKind('page'),
                                 },
-                                sym.char
+                                '插入分页符'
+                              ),
+                              h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  class: 'weboffice-qbar__chip-btn',
+                                  'data-testid': 'qbar-insert-section-break',
+                                  onMousedown: keepFocus,
+                                  onClick: () => insertBreakKind('section'),
+                                },
+                                '插入分节符'
+                              ),
+                            ]),
+                            h('div', { class: 'weboffice-qbar__menu-sep' }),
+                            h('div', { class: 'weboffice-qbar__section-title' }, '公文常用符号'),
+                            h(
+                              'div',
+                              { class: 'weboffice-qbar__symbols-grid' },
+                              CN_OFFICIAL_SYMBOLS.map((sym) =>
+                                h(
+                                  'button',
+                                  {
+                                    key: sym.char,
+                                    type: 'button',
+                                    class: 'weboffice-qbar__symbol-btn',
+                                    title: sym.label,
+                                    onMousedown: keepFocus,
+                                    onClick: () => insertSymbol(sym.char),
+                                  },
+                                  sym.char
+                                )
                               )
-                            )
-                          )
+                            ),
+                          ])
                         : null,
                     ]),
                   ]),

@@ -29,6 +29,9 @@ import {
   recordPutRelationship,
   runWithoutJournalCapture,
 } from './canonical-primitive-capture.ts';
+import { officialPresetLevelXml, type OrderedListPreset } from './official-list-presets.ts';
+
+export { ORDERED_LIST_PRESETS, type OrderedListPreset } from './official-list-presets.ts';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const REL = 'http://schemas.openxmlformats.org/package/2006/relationships';
@@ -257,10 +260,13 @@ function levelXml(kind: ListKind, ilvl: number, geometry?: ListLevelGeometry): s
 function abstractNumXml(
   kind: ListKind,
   abstractNumId: number,
-  geometry?: ListDefinitionGeometry
+  geometry?: ListDefinitionGeometry,
+  preset?: OrderedListPreset
 ): string {
   const levels = Array.from({ length: LEVEL_COUNT }, (_, ilvl) =>
-    levelXml(kind, ilvl, geometry?.[ilvl])
+    kind === 'ordered' && preset !== undefined
+      ? officialPresetLevelXml(preset, ilvl)
+      : levelXml(kind, ilvl, geometry?.[ilvl])
   ).join('');
   return (
     `<w:abstractNum w:abstractNumId="${abstractNumId}">` +
@@ -463,9 +469,10 @@ function sameElement(left: OoxmlElement, right: OoxmlElement): boolean {
 function sameLevelsAbstract(
   abstractNums: readonly OoxmlElement[],
   kind: ListKind,
-  geometry: ListDefinitionGeometry | undefined
+  geometry: ListDefinitionGeometry | undefined,
+  preset?: OrderedListPreset
 ): OoxmlElement | undefined {
-  const authored = authoredElements(abstractNumXml(kind, 0, geometry), [
+  const authored = authoredElements(abstractNumXml(kind, 0, geometry, preset), [
     { localName: 'abstractNum' },
   ])?.[0];
   if (!authored) return undefined;
@@ -505,7 +512,8 @@ export interface EnsuredListDefinition {
 export function ensureListDefinition(
   pkg: OoxmlPackage,
   kind: ListKind,
-  geometry?: ListDefinitionGeometry
+  geometry?: ListDefinitionGeometry,
+  preset?: OrderedListPreset
 ): EnsuredListDefinition | null {
   const existingPart = pkg.parts.get(NUMBERING_PART);
   const numbering = existingPart ?? emptyNumberingPart();
@@ -520,7 +528,7 @@ export function ensureListDefinition(
   // Reuse the first matching TEMPLATE, not its counter instance. Two disconnected lists
   // can share one `w:abstractNum`, but each needs its own `w:num` with restart overrides to
   // start at the authored level baseline. Without them a new list after 39 items began at 40.
-  const matchingAbstract = sameLevelsAbstract(abstractNums, kind, geometry);
+  const matchingAbstract = sameLevelsAbstract(abstractNums, kind, geometry, preset);
 
   const matchingAbstractId = matchingAbstract
     ? Number(attribute(matchingAbstract, 'abstractNumId'))
@@ -531,7 +539,7 @@ export function ensureListDefinition(
   // fresh node ids. A matching template needs only a new counter instance.
   const createsAbstract = matchingAbstract === undefined;
   const authored = authoredElements(
-    (createsAbstract ? abstractNumXml(kind, abstractNumId, geometry) : '') +
+    (createsAbstract ? abstractNumXml(kind, abstractNumId, geometry, preset) : '') +
       `<w:num w:numId="${numId}"><w:abstractNumId w:val="${abstractNumId}"/>` +
       `${matchingAbstract ? restartOverridesXml(matchingAbstract) : ''}</w:num>`,
     createsAbstract

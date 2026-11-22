@@ -359,6 +359,7 @@ export interface PaginatedSurface extends SurfaceIndentAndListOps, SurfaceChartO
     readonly marginRightTwips?: number;
     readonly marginBottomTwips?: number;
     readonly marginLeftTwips?: number;
+    readonly columns?: import('@docx-editor.dev/core/store').SectionColumnsWrite;
     readonly anchorParagraphId?: string;
   }): boolean;
   /**

@@ -119,7 +119,17 @@ export interface ParagraphFormatCommand {
    * "Clear All" does; omit the field to leave them as authored.
    */
   tabStops?: readonly ParagraphTabStop[];
+  /** Paragraph borders (`w:pBdr`): non-empty replaces edges, empty array clears direct borders. */
+  borders?: readonly {
+    readonly edge: 'top' | 'left' | 'bottom' | 'right' | 'between' | 'bar';
+    readonly attributes: Readonly<Record<string, string>>;
+  }[];
+  /** Paragraph background shading fill (`w:shd/@w:fill`, 6-hex RRGGBB); `null` clears direct shading. */
+  shading?: string | null;
 }
+
+/** Optional preset for `toggleList` (Chinese official numbering or explicit clear). */
+export type ToggleListPreset = 'cn-heading1' | 'cn-heading2' | 'cn-decimal' | 'cn-paren' | 'clear';
 
 /** One custom tab stop, as a command states it. @public */
 export interface ParagraphTabStop {
@@ -799,3 +809,11 @@ export interface Point {
 
 /** What every subscription returns. Calling it twice is safe. */
 export type Unsubscribe = () => void;
+
+/** Read-only clipboard payload snapshot returned by the `copyFlavours` query. */
+export interface CopyFlavoursResult {
+  readonly text: string;
+  readonly html: string | null;
+  readonly drawingNodeId?: string;
+  readonly reason?: string;
+}

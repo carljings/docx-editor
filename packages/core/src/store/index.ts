@@ -69,3 +69,9 @@ export {
   type DrawingPreviewPackageResult,
   type DrawingPreviewTarget,
 } from './package/drawing-preview-package.ts';
+export { ORDERED_LIST_PRESETS, type OrderedListPreset } from './package/official-list-presets.ts';
+export {
+  validateSectionColumnsWrite,
+  DEFAULT_COLUMN_SPACE_TWIPS,
+  type SectionColumnsWrite,
+} from './store/tree-op-section-cols.ts';

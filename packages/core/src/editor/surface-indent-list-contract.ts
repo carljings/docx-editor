@@ -96,7 +96,10 @@ export interface SurfaceIndentAndListOps {
    * out when they are already one. The definition is created in `numbering.xml` on first
    * use — a document that has never carried a list has no numbering part at all.
    */
-  toggleList(kind: 'bullet' | 'ordered'): boolean;
+  toggleList(
+    kind: 'bullet' | 'ordered',
+    preset?: 'cn-heading1' | 'cn-heading2' | 'cn-decimal' | 'cn-paren' | 'clear'
+  ): boolean;
   /** Whether every paragraph the selection touches is already a list of `kind`. */
   isListActive(kind: 'bullet' | 'ordered'): boolean;
 }

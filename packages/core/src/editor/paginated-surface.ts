@@ -1117,9 +1117,9 @@ export function mountPaginatedSurface(
     // List definitions mint `numId` on the package before the paragraph op names it, so
     // the typing transaction never binds an actor for that scan. Same wrap the hyperlink
     // mint uses.
-    ensureListDefinition: (kind, geometry) =>
+    ensureListDefinition: (kind, geometry, preset) =>
       runWithTransactionActor(collaborationSession?.identity.actorId, () =>
-        session.ensureListDefinition(kind, geometry)
+        session.ensureListDefinition(kind, geometry, preset)
       ),
     applyPmDoc: (doc) => {
       if (editingMode === 'view') {

@@ -12,6 +12,11 @@ export interface PageSetupUpdate {
   readonly marginRightTwips?: number;
   readonly marginBottomTwips?: number;
   readonly marginLeftTwips?: number;
+  readonly columns?: {
+    readonly count: number;
+    readonly spaceTwips?: number;
+    readonly separator?: boolean;
+  };
   readonly scope?: 'document' | 'section';
 }
 
@@ -48,6 +53,7 @@ export function usePageSetup(): UsePageSetupReturn {
       ...(update.marginRightTwips !== undefined ? { marginRight: update.marginRightTwips } : {}),
       ...(update.marginBottomTwips !== undefined ? { marginBottom: update.marginBottomTwips } : {}),
       ...(update.marginLeftTwips !== undefined ? { marginLeft: update.marginLeftTwips } : {}),
+      ...(update.columns !== undefined ? { columns: update.columns } : {}),
       ...(update.scope !== undefined ? { scope: update.scope } : {}),
       type: 'setPageSetup',
     });

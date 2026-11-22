@@ -136,6 +136,11 @@ export function pageSetupOf(surface: PaginatedSurface | null): PageSetup | null 
       left: section.margins.leftTwips,
     },
     gutterTwips: section.margins.gutterTwips,
+    columns: {
+      count: section.columns.count,
+      gapTwips: section.columns.gapTwips,
+      ...(section.columns.separator ? { separator: true } : {}),
+    },
   };
 }
 

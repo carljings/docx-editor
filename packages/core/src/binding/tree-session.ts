@@ -1171,7 +1171,7 @@ export function openTreeSessionFromPackage(
         );
       },
 
-      ensureListDefinition(kind, geometry) {
+      ensureListDefinition(kind, geometry, preset) {
         // The numbering part lives on the PACKAGE, not the main-part tree. Definitions are
         // monotonic in-session and persist across lifecycle package undo/redo so story
         // `numId` references cannot go dead. The memoized numbering root is cleared so
@@ -1183,7 +1183,7 @@ export function openTreeSessionFromPackage(
         return runObservedStoreTransaction(
           packageStore,
           () => {
-            const ensured = ensureListDefinition(currentPackage(), kind, geometry);
+            const ensured = ensureListDefinition(currentPackage(), kind, geometry, preset);
             if (!ensured) return null;
             packageStore.replacePackageShell(ensured.pkg);
             numberingRootPackage = null;

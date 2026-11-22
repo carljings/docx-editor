@@ -483,7 +483,11 @@ export interface TreeDocxSessionView extends HeadlessDocumentView {
    * With `geometry`, the definition keeps those level positions, so an item switching
    * between bullets and numbers stays where it was.
    */
-  ensureListDefinition(kind: ListKind, geometry?: ListDefinitionGeometry): string | null;
+  ensureListDefinition(
+    kind: ListKind,
+    geometry?: ListDefinitionGeometry,
+    preset?: import('@docx-editor.dev/core/store').OrderedListPreset
+  ): string | null;
   /**
    * Declare `level` in the list definition `numId` names, with Word's default format for
    * that depth, or answer false.

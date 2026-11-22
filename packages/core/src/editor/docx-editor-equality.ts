@@ -167,7 +167,10 @@ export function pageSetupEqual(a: PageSetup | null, b: PageSetup | null): boolea
     a.marginsTwips.right === b.marginsTwips.right &&
     a.marginsTwips.bottom === b.marginsTwips.bottom &&
     a.marginsTwips.left === b.marginsTwips.left &&
-    a.gutterTwips === b.gutterTwips
+    a.gutterTwips === b.gutterTwips &&
+    a.columns?.count === b.columns?.count &&
+    a.columns?.gapTwips === b.columns?.gapTwips &&
+    Boolean(a.columns?.separator) === Boolean(b.columns?.separator)
   );
 }
 

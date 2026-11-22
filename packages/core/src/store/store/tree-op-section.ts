@@ -12,6 +12,7 @@ import {
   type OoxmlParagraphNode,
   type OoxmlPart,
 } from '../package/ooxml-tree.ts';
+import { buildSectionColsElement } from './tree-op-section-cols.ts';
 import {
   createNodeIdAllocator,
   findNode,
@@ -772,6 +773,15 @@ function mergedSectionChildren(
       children = children.map((child) => (child.id === existingPgMar.id ? nextPgMar : child));
     } else {
       children.splice(sectionInsertIndex(children, 'pgMar'), 0, nextPgMar);
+    }
+  }
+  if (op.columns !== undefined) {
+    const existingCols = sectionChild(sectPr, 'cols');
+    const nextCols = buildSectionColsElement(existingCols?.id ?? nextId(), op.columns);
+    if (existingCols) {
+      children = children.map((child) => (child.id === existingCols.id ? nextCols : child));
+    } else {
+      children.splice(sectionInsertIndex(children, 'cols'), 0, nextCols);
     }
   }
   return children;

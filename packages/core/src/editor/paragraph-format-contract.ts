@@ -51,6 +51,11 @@ export interface SurfaceParagraphFormat {
    * "Clear All" does; omit the field to leave them as authored.
    */
   readonly tabStops?: readonly ParagraphTabStop[];
+  readonly borders?: readonly {
+    readonly edge: 'top' | 'left' | 'bottom' | 'right' | 'between' | 'bar';
+    readonly attributes: Readonly<Record<string, string>>;
+  }[];
+  readonly shading?: string | null;
 }
 
 /** One property in a batched paragraph write. */

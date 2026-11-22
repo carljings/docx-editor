@@ -17,6 +17,14 @@ import {
   twipsToCm,
 } from '../units';
 import { createWebOfficeAdapter } from '../adapter';
+import { buildPageSetupUpdate } from '../official-dialog-helpers';
+import {
+  CHAR_SPACING_PRESETS,
+  CN_NUMBERING_PRESETS,
+  PARAGRAPH_BORDER_PRESETS,
+  PARAGRAPH_SHADING_SWATCHES,
+  UNDERLINE_STYLE_PRESETS,
+} from '../p1-presets';
 
 describe('@weboffice/vue polyfills & Xinchuang browser probe', () => {
   test('installs fallback structuredClone on simulated Chromium 86 global target', () => {
@@ -198,5 +206,90 @@ describe('@weboffice/vue engine-agnostic adapter', () => {
     expect(fallbackRes.fallbackApplied).toBe(true);
     expect(fallbackRes.position).toEqual({ blockId: 'p1', offset: 15 });
     expect(calls.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('@weboffice/vue P1 official presets & page columns dirty-tracking', () => {
+  test('exposes GB/T 9704 numbering, official red borders, shading, underline and char spacing presets', () => {
+    expect(CN_NUMBERING_PRESETS.map((p) => p.preset)).toEqual([
+      'cn-heading1',
+      'cn-heading2',
+      'cn-decimal',
+      'cn-paren',
+    ]);
+    const red = PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'official-red');
+    expect(red?.edges).toEqual([
+      { edge: 'bottom', attributes: { val: 'single', sz: '18', space: '4', color: 'DC2626' } },
+    ]);
+    const doubleRed = PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'official-double-red');
+    expect(doubleRed?.edges[0]?.attributes.val).toBe('double');
+    expect(PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'box')?.edges.length).toBe(4);
+    expect(PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'none')?.edges.length).toBe(0);
+    for (const s of PARAGRAPH_SHADING_SWATCHES) {
+      expect(s.hex === null || /^[0-9A-F]{6}$/.test(s.hex)).toBe(true);
+    }
+    expect(UNDERLINE_STYLE_PRESETS.some((u) => u.value === 'wave')).toBe(true);
+    expect(UNDERLINE_STYLE_PRESETS.some((u) => u.value === 'none')).toBe(true);
+    for (const cs of CHAR_SPACING_PRESETS) {
+      expect(cs.twips).toBe(Math.round(cs.pt * 20));
+    }
+  });
+
+  test('buildPageSetupUpdate only emits columns when columns is dirty and preserves custom paper', () => {
+    const base = {
+      dirty: {
+        paper: false,
+        orientation: false,
+        marginTop: false,
+        marginBottom: false,
+        marginLeft: false,
+        marginRight: false,
+        columns: false,
+      },
+      paperId: 'custom',
+      customPaperSize: { widthTwips: 12500, heightTwips: 17000 },
+      orientation: 'portrait' as const,
+      marginTopStr: '3.7',
+      marginBottomStr: '3.5',
+      marginLeftStr: '2.8',
+      marginRightStr: '2.6',
+      columnsCount: 2 as const,
+      columnsSpaceStr: '0.75',
+      columnsSeparator: true,
+      scope: 'section' as const,
+    };
+
+    // Only marginTop dirty -> columns & paper dimensions omitted
+    const marginOnly = buildPageSetupUpdate({
+      ...base,
+      dirty: { ...base.dirty, marginTop: true },
+    });
+    expect(marginOnly.hasChanges).toBe(true);
+    expect(marginOnly.update.columns).toBeUndefined();
+    expect(marginOnly.update.pageWidthTwips).toBeUndefined();
+
+    // Only columns dirty -> emits columns without overwriting paper/margins
+    const colsOnly = buildPageSetupUpdate({
+      ...base,
+      dirty: { ...base.dirty, columns: true },
+    });
+    expect(colsOnly.hasChanges).toBe(true);
+    expect(colsOnly.update.pageWidthTwips).toBeUndefined();
+    expect(colsOnly.update.marginTopTwips).toBeUndefined();
+    expect(colsOnly.update.columns).toEqual({
+      count: 2,
+      spaceTwips: cmToTwips(0.75),
+      separator: true,
+    });
+    expect(colsOnly.update.scope).toBe('section');
+
+    // Invalid column gap rejected
+    const badGap = buildPageSetupUpdate({
+      ...base,
+      dirty: { ...base.dirty, columns: true },
+      columnsSpaceStr: '12',
+    });
+    expect(badGap.error).toBeDefined();
+    expect(badGap.hasChanges).toBe(false);
   });
 });

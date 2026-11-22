@@ -487,6 +487,8 @@ export type TreeDocOp =
       readonly marginRightTwips?: number;
       readonly marginBottomTwips?: number;
       readonly marginLeftTwips?: number;
+      /** Equal-width column layout (`w:cols`) for targeted sections. */
+      readonly columns?: import('./tree-op-section-cols.ts').SectionColumnsWrite;
       /**
        * Word's "Apply to: This section": update only the section GOVERNING this
        * paragraph — the nearest mid-body `w:sectPr` at or after it, else the body-level

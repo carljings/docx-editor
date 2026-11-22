@@ -11,8 +11,8 @@ import type {
   TableRightEdgeResizeTarget,
 } from '@docx-editor.dev/core/contracts/editor';
 import type { DocumentThemeColorEntry } from '../binding/document-theme.ts';
-import type { OoxmlPart } from '../store/package/ooxml-tree.ts';
-import type { OoxmlTableCellNode } from '../store/package/ooxml-tree.ts';
+import type { OoxmlPart, OoxmlTableCellNode } from '../store/package/ooxml-tree.ts';
+import { toggleHeaderRowOp } from './paragraph-format-indent.ts';
 import { validateTreeOp } from '../store/store/tree-ops.ts';
 import {
   readEditableTableTopology,
@@ -748,15 +748,11 @@ export function planTableCommand(input: TableCommandPlannerInput): TableCommandP
     return refusal('locked', 'the document is open for viewing');
   }
 
-  switch (command.type) {
-    case 'toggleHeaderRow':
-    case 'setTableProperties':
-      return refusal(
-        'unsupported',
-        `command '${command.type}' is not supported by the tree editor`
-      );
-    default:
-      break;
+  if (command.type === 'setTableProperties') {
+    return refusal(
+      'unsupported',
+      "command 'setTableProperties' is not supported by the tree editor"
+    );
   }
 
   const shapeError = validateTableCommandShape(command);
@@ -803,6 +799,13 @@ export function planTableCommand(input: TableCommandPlannerInput): TableCommandP
   }
 
   switch (command.type) {
+    case 'toggleHeaderRow': {
+      if (!anchor) return refusal('unsupported', 'the selection is not inside a table');
+      const op = toggleHeaderRowOp(part, anchor.tableId);
+      return op
+        ? planValidated(part, [op], { kind: 'preserveSelection' })
+        : refusal('unsupported', 'cannot toggle header row');
+    }
     case 'mergeCells':
     case 'splitCell': {
       if (!anchor) return refusal('unsupported', 'the selection is not inside a table');
@@ -986,14 +989,11 @@ export function tableCommandCanSupport(command: EditorCommand): {
   if (!isTableEditorCommand(command)) {
     return { supported: false, reason: `command '${command.type}' is not a table command` };
   }
-  switch (command.type) {
-    case 'toggleHeaderRow':
-    case 'setTableProperties':
-      return {
-        supported: false,
-        reason: `command '${command.type}' is not supported by the tree editor`,
-      };
-    default:
-      return { supported: true };
+  if (command.type === 'setTableProperties') {
+    return {
+      supported: false,
+      reason: "command 'setTableProperties' is not supported by the tree editor",
+    };
   }
+  return { supported: true };
 }

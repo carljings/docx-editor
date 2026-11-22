@@ -17,6 +17,9 @@ import {
   MAX_INSERT_TABLE_ROWS,
 } from '../store/store/table-constraints.ts';
 import { fontFamilyName } from '../store/package/font-family-name.ts';
+import { ORDERED_LIST_PRESETS } from '../store/package/official-list-presets.ts';
+import { validateSectionColumnsWrite } from '../store/store/tree-op-section-cols.ts';
+import { paragraphVisualArgRefusal, UNDERLINE_VARIANTS } from './paragraph-format-indent.ts';
 import { isDocAnchor, isDocAnchorRange } from './anchor-resolution.ts';
 import { tableCommandCanSupport } from './table-command-plan.ts';
 import { replaceMatchArgumentRefusal } from './docx-editor-replace-match.ts';
@@ -183,6 +186,27 @@ export function resolveMarkAttr(command: { mark: string; value: unknown }): Reso
         };
       }
       return { ok: true, localName: 'highlight', attributes: { val: value } };
+    }
+    case 'underline': {
+      if (typeof value !== 'string' || !UNDERLINE_VARIANTS.has(value)) {
+        return {
+          ok: false,
+          code: 'invalidArgs',
+          reason:
+            'underline requires an ST_Underline variant (single, double, thick, dotted, dash, wave, none)',
+        };
+      }
+      return { ok: true, localName: 'u', attributes: { val: value } };
+    }
+    case 'characterSpacing': {
+      if (typeof value !== 'number' || !Number.isInteger(value) || Math.abs(value) > 31_680) {
+        return {
+          ok: false,
+          code: 'invalidArgs',
+          reason: 'characterSpacing requires an integer twips value within ±31680',
+        };
+      }
+      return { ok: true, localName: 'spacing', attributes: { val: String(value) } };
     }
     default:
       return {
@@ -375,6 +399,8 @@ export function classifyCommand(command: EditorCommand): CommandSupport {
           };
         }
       }
+      const visualRefusal = paragraphVisualArgRefusal(command.shading, command.borders);
+      if (visualRefusal) return { supported: false, code: 'invalidArgs', reason: visualRefusal };
       const line = command.lineSpacing;
       if (line !== undefined && line !== null) {
         if (line.rule !== 'multiple' && line.rule !== 'exact' && line.rule !== 'atLeast') {
@@ -488,10 +514,23 @@ export function classifyCommand(command: EditorCommand): CommandSupport {
       }
       return { supported: true, mutating: true };
     }
-    case 'toggleList':
-      return command.kind === 'bullet' || command.kind === 'ordered'
-        ? { supported: true, mutating: true }
-        : { supported: false, reason: `list kind '${command.kind}' is not supported` };
+    case 'toggleList': {
+      if (command.kind !== 'bullet' && command.kind !== 'ordered') {
+        return { supported: false, reason: `list kind '${command.kind}' is not supported` };
+      }
+      if (
+        command.preset !== undefined &&
+        command.preset !== 'clear' &&
+        !ORDERED_LIST_PRESETS.has(command.preset)
+      ) {
+        return {
+          supported: false,
+          code: 'invalidArgs',
+          reason: `list preset '${command.preset}' is not supported`,
+        };
+      }
+      return { supported: true, mutating: true };
+    }
     case 'adjustIndent':
       return command.direction === 'increase' || command.direction === 'decrease'
         ? { supported: true, mutating: true }
@@ -585,9 +624,14 @@ export function classifyCommand(command: EditorCommand): CommandSupport {
       if (
         dims.every((value) => value === undefined) &&
         margins.every((value) => value === undefined) &&
-        command.orientation === undefined
+        command.orientation === undefined &&
+        command.columns === undefined
       ) {
         return { supported: false, reason: 'setPageSetup requires at least one field' };
+      }
+      if (command.columns !== undefined) {
+        const colErr = validateSectionColumnsWrite(command.columns);
+        if (colErr) return { supported: false, code: 'invalidArgs', reason: colErr };
       }
       // The same bounds the op layer enforces, refused here so `can` answers honestly
       // BEFORE a dialog submits.

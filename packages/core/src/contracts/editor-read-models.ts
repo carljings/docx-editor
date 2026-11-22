@@ -35,4 +35,10 @@ export interface PageSetup {
   };
   /** Binding gutter (`w:gutter`), folded into the left margin by layout. */
   readonly gutterTwips?: number;
+  /** Equal-width column count and gap (`w:cols`) for the active section. */
+  readonly columns?: {
+    readonly count: number;
+    readonly gapTwips: number;
+    readonly separator?: boolean;
+  };
 }

@@ -238,6 +238,56 @@ export function formatOrdinalText(value: number): string {
   return capitalize(head + ordinalWord(words.slice(cut + 1)));
 }
 
+const CN_DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'] as const;
+const CN_LEGAL_DIGITS = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'] as const;
+const CN_SMALL_UNITS = ['', '十', '百', '千'] as const;
+const CN_LEGAL_SMALL_UNITS = ['', '拾', '佰', '仟'] as const;
+
+/**
+ * Chinese counting numerals (`chineseCounting` / `chineseCountingThousand` / `chineseLegalSimplified`,
+ * §17.18.59): 1 → 一, 10 → 十, 11 → 十一, 20 → 二十, 101 → 一百零一.
+ */
+export function formatChineseCounting(value: number, legal = false): string {
+  const n = Math.trunc(value);
+  if (!Number.isFinite(n) || n < 0 || n >= 100_000) return formatDecimal(value);
+  const digits = legal ? CN_LEGAL_DIGITS : CN_DIGITS;
+  const units = legal ? CN_LEGAL_SMALL_UNITS : CN_SMALL_UNITS;
+  if (n === 0) return digits[0];
+
+  const under10000 = (num: number): string => {
+    let out = '';
+    let zeroPending = false;
+    const d = [
+      Math.floor(num / 1000) % 10,
+      Math.floor(num / 100) % 10,
+      Math.floor(num / 10) % 10,
+      num % 10,
+    ];
+    for (let i = 0; i < 4; i++) {
+      const digit = d[i]!;
+      if (digit === 0) {
+        if (out.length > 0) zeroPending = true;
+      } else {
+        if (zeroPending) {
+          out += digits[0];
+          zeroPending = false;
+        }
+        // 10..19 omit leading "一" in standard Chinese counting (十, 十一, ..., 十九)
+        const omitOne = !legal && i === 2 && digit === 1 && out.length === 0;
+        out += (omitOne ? '' : digits[digit]!) + units[3 - i]!;
+      }
+    }
+    return out;
+  };
+
+  if (n < 10_000) return under10000(n);
+  const wan = Math.floor(n / 10_000);
+  const rem = n % 10_000;
+  const wanUnit = legal ? '萬' : '万';
+  if (rem === 0) return `${under10000(wan)}${wanUnit}`;
+  return `${under10000(wan)}${wanUnit}${rem < 1000 ? digits[0] : ''}${under10000(rem)}`;
+}
+
 /**
  * Format one counter for a `w:numFmt` value (ST_NumberFormat, §17.18.59).
  *
@@ -287,6 +337,11 @@ export function formatNumFmt(numFmt: string, value: number): string {
       return formatArabicAbjad(clampListValue(value));
     case 'hindiNumbers':
       return formatHindiNumbers(formatDecimal(value));
+    case 'chineseCounting':
+    case 'chineseCountingThousand':
+      return formatChineseCounting(clampListValue(value), false);
+    case 'chineseLegalSimplified':
+      return formatChineseCounting(clampListValue(value), true);
     case 'none':
     case 'bullet':
       return '';

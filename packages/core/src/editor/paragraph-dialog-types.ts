@@ -96,4 +96,9 @@ export interface ParagraphFormatUpdate {
   readonly pageBreakBefore?: boolean;
   /** Replace the custom tab stops. An EMPTY list clears them; omit to leave them alone. */
   readonly tabStops?: readonly ParagraphTabStop[];
+  readonly borders?: readonly {
+    readonly edge: 'top' | 'left' | 'bottom' | 'right' | 'between' | 'bar';
+    readonly attributes: Readonly<Record<string, string>>;
+  }[];
+  readonly shading?: string | null;
 }

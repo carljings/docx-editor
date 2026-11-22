@@ -233,6 +233,8 @@ export function execEditorCommand(
           ? { pageBreakBefore: command.pageBreakBefore }
           : {}),
         ...(command.tabStops !== undefined ? { tabStops: command.tabStops } : {}),
+        ...(command.borders !== undefined ? { borders: command.borders } : {}),
+        ...(command.shading !== undefined ? { shading: command.shading } : {}),
       });
       if (!written) {
         return {
@@ -289,6 +291,7 @@ export function execEditorCommand(
         ...(command.marginRight !== undefined ? { marginRightTwips: command.marginRight } : {}),
         ...(command.marginBottom !== undefined ? { marginBottomTwips: command.marginBottom } : {}),
         ...(command.marginLeft !== undefined ? { marginLeftTwips: command.marginLeft } : {}),
+        ...(command.columns !== undefined ? { columns: command.columns } : {}),
         ...(anchor !== undefined ? { anchorParagraphId: anchor } : {}),
       });
       // The op layer can refuse what per-field bounds cannot see — margins that
@@ -304,7 +307,7 @@ export function execEditorCommand(
       break;
     }
     case 'toggleList':
-      if (!mounted.toggleList(command.kind)) {
+      if (!mounted.toggleList(command.kind, command.preset)) {
         return {
           ok: false,
           code: 'invalidArgs',

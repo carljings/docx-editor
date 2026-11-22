@@ -1108,7 +1108,7 @@ export interface EditorCommands
    */
   setParagraphFormat: ParagraphFormatCommand;
 
-  toggleList: { kind: 'bullet' | 'ordered' };
+  toggleList: { kind: 'bullet' | 'ordered'; preset?: import('./types.ts').ToggleListPreset };
 
   insertRow: { where: 'above' | 'below'; target?: TableRowOccurrenceTarget };
   insertColumn: { where: 'left' | 'right'; target?: TableColumnOccurrenceTarget };
@@ -1188,6 +1188,7 @@ export interface EditorCommands
     marginBottom?: number;
     marginLeft?: number;
     orientation?: 'portrait' | 'landscape';
+    columns?: { count: number; spaceTwips?: number; separator?: boolean };
     scope?: 'document' | 'section';
   };
 
@@ -1496,7 +1497,7 @@ export interface EditorQueryResults extends DocQueryResults, EditorChartQueryRes
   tableContext: TableContext | null;
   hyperlinkAt: HyperlinkInfo | null;
   selectedText: string;
-  copyFlavours: { readonly text: string; readonly html: string | null; readonly drawingNodeId?: string; readonly reason?: string } | null;
+  copyFlavours: import('./types.ts').CopyFlavoursResult | null;
   watermark: Watermark | null;
   splitCellConfig: { maxRows: number; maxCols: number } | null;
   contentControlAt: ContentControlSummary | null;
