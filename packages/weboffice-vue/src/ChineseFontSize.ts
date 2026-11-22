@@ -12,6 +12,7 @@ import {
 } from 'vue';
 import { useDocxEditor, useEditorValueCommand } from '@docx-editor.dev/vue';
 import { CN_FONT_SIZES, type ChineseFontSizeOption } from './fonts';
+import { stepChineseFontSize } from './units';
 
 let nextListboxId = 1;
 
@@ -136,6 +137,27 @@ export const ChineseFontSize = defineComponent({
       return currentHalfPoints.value !== null && Math.round(pt * 2) === currentHalfPoints.value;
     }
 
+    const canDecrease = computed(
+      () =>
+        size.isEnabled.value &&
+        stepChineseFontSize(currentHalfPoints.value, 'decrease', props.sizes) !== null
+    );
+    const canIncrease = computed(
+      () =>
+        size.isEnabled.value &&
+        stepChineseFontSize(currentHalfPoints.value, 'increase', props.sizes) !== null
+    );
+
+    function stepSize(direction: 'increase' | 'decrease') {
+      if (!size.isEnabled.value) return;
+      const next = stepChineseFontSize(currentHalfPoints.value, direction, props.sizes);
+      if (next !== null) {
+        draft.value = null;
+        commitHalfPoints(next);
+      }
+      editor.value?.focus();
+    }
+
     return () =>
       h('span', { ref: anchor, class: 'weboffice-cn-fontsize-anchor', style: 'display:none' }, [
         fontSizeHost.value
@@ -184,6 +206,34 @@ export const ChineseFontSize = defineComponent({
                     }
                   },
                 }),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'weboffice-cn-fontsize__step',
+                    'data-testid': 'weboffice-fontsize-increase',
+                    title: '增大字号（按公文字号档位）',
+                    'aria-label': '增大字号',
+                    disabled: !canIncrease.value,
+                    onMousedown: (e: MouseEvent) => e.preventDefault(),
+                    onClick: () => stepSize('increase'),
+                  },
+                  'A+'
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'weboffice-cn-fontsize__step',
+                    'data-testid': 'weboffice-fontsize-decrease',
+                    title: '减小字号（按公文字号档位）',
+                    'aria-label': '减小字号',
+                    disabled: !canDecrease.value,
+                    onMousedown: (e: MouseEvent) => e.preventDefault(),
+                    onClick: () => stepSize('decrease'),
+                  },
+                  'A-'
+                ),
                 menuOpen.value
                   ? h(
                       'div',

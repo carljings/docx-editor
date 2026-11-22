@@ -85,6 +85,25 @@ export const CN_OFFICIAL_FONT_FILES: readonly OfficialFontFileSpec[] = [
 ];
 
 /**
+ * 字体下拉默认展示的中文公文 + 常用西文字体目录（声明后不触发预下载，仅在选用时按需解析）。
+ */
+export const CN_SELECTABLE_FONT_FAMILIES: readonly string[] = Object.freeze([
+  '仿宋_GB2312',
+  '仿宋',
+  '方正仿宋_GBK',
+  '方正小标宋_GBK',
+  '黑体',
+  '方正黑体_GBK',
+  '宋体',
+  '楷体_GB2312',
+  '楷体',
+  '方正楷体_GBK',
+  'Times New Roman',
+  'Calibri',
+  'Arial',
+]);
+
+/**
  * 开源 Fandol 0.3 兜底字族（无商业授权风险，适合内网未购方正字库时的合规兜底）。
  */
 export const FANDOL_STAND_INS: readonly FontStandInSpec[] = [
@@ -347,7 +366,12 @@ export function createOfficialFontResolver(options: OfficialFontResolverOptions 
       };
     });
 
-  const origins: FontOrigin[] = [officialOrigin];
+  const catalogOrigin: FontOrigin = {
+    supportedFamilies: CN_SELECTABLE_FONT_FAMILIES,
+    sources: [],
+  };
+
+  const origins: FontOrigin[] = [catalogOrigin, officialOrigin];
   if (enableWpsLocalStandIns) {
     origins.push(createStandInOrigin('wps-local', 'wps', WPS_LOCAL_DEV_STAND_INS));
   }

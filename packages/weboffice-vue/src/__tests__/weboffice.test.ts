@@ -1,6 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { installLegacyPolyfills, probeBrowserEnvironment } from '../polyfills';
-import { CN_FONT_SIZES, CN_OFFICIAL_FONT_FILES, createOfficialFontResolver } from '../fonts';
+import {
+  CN_FONT_SIZES,
+  CN_OFFICIAL_FONT_FILES,
+  CN_SELECTABLE_FONT_FAMILIES,
+  createOfficialFontResolver,
+} from '../fonts';
+import {
+  CN_OFFICIAL_SYMBOLS,
+  GB_T_9704_MARGINS_CM,
+  charsToTwips,
+  cmToTwips,
+  countDocumentWords,
+  stepChineseFontSize,
+  twipsToChars,
+  twipsToCm,
+} from '../units';
 import { createWebOfficeAdapter } from '../adapter';
 
 describe('@weboffice/vue polyfills & Xinchuang browser probe', () => {
@@ -49,6 +64,8 @@ describe('@weboffice/vue Chinese official document fonts & sizes', () => {
 
     const bundle = createOfficialFontResolver({ baseUrl: '/reportcenter/' });
     expect(typeof bundle.resolver).toBe('function');
+    expect(CN_SELECTABLE_FONT_FAMILIES).toContain('仿宋_GB2312');
+    expect(CN_SELECTABLE_FONT_FAMILIES).toContain('方正小标宋_GBK');
     expect(bundle.getDiagnostics()).toEqual({
       status: 'idle',
       pendingCount: 0,
@@ -56,6 +73,70 @@ describe('@weboffice/vue Chinese official document fonts & sizes', () => {
       hits: [],
       misses: [],
     });
+  });
+
+  test('exposes supportedFamilies from official resolver even without network fetches', async () => {
+    const bundle = createOfficialFontResolver({
+      baseUrl: '/reportcenter/',
+      enableFandolFallback: false,
+      enablePackagedFonts: false,
+    });
+    const res = await bundle.resolver({
+      families: ['UnknownFont'],
+      faces: [],
+      defaultFamily: 'Times New Roman',
+    });
+    expect(res?.supportedFamilies).toContain('仿宋_GB2312');
+    expect(res?.supportedFamilies).toContain('黑体');
+    expect(res?.supportedFamilies).toContain('方正小标宋_GBK');
+  });
+});
+
+describe('@weboffice/vue official document units, font ladder, and word statistics', () => {
+  test('converts twips <-> cm and chars accurately for GB/T 9704 official formatting', () => {
+    // A4 21.0 x 29.7 cm
+    expect(twipsToCm(11906)).toBeCloseTo(21.0, 1);
+    expect(twipsToCm(16838)).toBeCloseTo(29.7, 1);
+    expect(cmToTwips(GB_T_9704_MARGINS_CM.top)).toBe(2098);
+    expect(cmToTwips(GB_T_9704_MARGINS_CM.bottom)).toBe(1984);
+    expect(cmToTwips(GB_T_9704_MARGINS_CM.left)).toBe(1587);
+    expect(cmToTwips(GB_T_9704_MARGINS_CM.right)).toBe(1474);
+
+    // 三号 (16pt) 首行缩进 2 字符 = 32pt = 640 twips
+    expect(charsToTwips(2, 16)).toBe(640);
+    expect(twipsToChars(640, 16)).toBe(2);
+    // 小四 (12pt) 首行缩进 2 字符 = 24pt = 480 twips
+    expect(charsToTwips(2, 12)).toBe(480);
+  });
+
+  test('steps Chinese font sizes strictly along GB/T 9704 ladder', () => {
+    // 三号 (16pt = 32hp) -> 小二 (18pt = 36hp) / 小三 (15pt = 30hp)
+    expect(stepChineseFontSize(32, 'increase')).toBe(36);
+    expect(stepChineseFontSize(32, 'decrease')).toBe(30);
+    // Intermediate non-standard 17pt (34hp) steps to nearest upper/lower standard rung
+    expect(stepChineseFontSize(34, 'increase')).toBe(36);
+    expect(stepChineseFontSize(34, 'decrease')).toBe(32);
+    // Boundaries clamp cleanly
+    expect(stepChineseFontSize(84, 'increase')).toBeNull();
+    expect(stepChineseFontSize(10, 'decrease')).toBeNull();
+    // Null defaults around 三号 (16pt)
+    expect(stepChineseFontSize(null, 'increase')).toBe(36);
+    expect(stepChineseFontSize(null, 'decrease')).toBe(28);
+  });
+
+  test('counts Chinese characters, Latin words, and paragraphs accurately', () => {
+    const stats = countDocumentWords([
+      { text: '执法监督管理“日盯办”报告' },
+      { text: 'ABCDE 2026年第12期' },
+      { text: '' },
+    ]);
+    expect(stats.paragraphCount).toBe(3);
+    expect(stats.cjkChars).toBe(14);
+    expect(stats.latinWords).toBe(3); // ABCDE, 2026, 12
+    expect(stats.totalCharsNoSpace).toBe(27);
+    expect(stats.totalCharsWithSpace).toBe(28);
+    expect(CN_OFFICIAL_SYMBOLS.some((s) => s.char === '〔')).toBe(true);
+    expect(CN_OFFICIAL_SYMBOLS.some((s) => s.char === '〕')).toBe(true);
   });
 });
 

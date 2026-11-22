@@ -7,7 +7,19 @@
   flex-direction: column;
 }
 
-.weboffice-host--cn-fontsize .docx-toolbar__font-size-input {
+.weboffice-host > .docx-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto !important;
+}
+
+.weboffice-host--statusbar .docx-editor__page-number {
+  display: none !important;
+}
+
+/* 中文字号 + A+/A- 替换原英文磅值步进器 */
+.weboffice-host--cn-fontsize .docx-toolbar__font-size-input,
+.weboffice-host--cn-fontsize [data-slot='font.size'] .docx-toolbar__stepper-button {
   display: none !important;
 }
 
@@ -15,6 +27,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  gap: 2px;
 }
 
 .weboffice-cn-fontsize__input {
@@ -35,12 +48,35 @@
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 
+.weboffice-cn-fontsize__step {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #1f2328;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.weboffice-cn-fontsize__step:hover:not(:disabled) {
+  background: #eef2f7;
+  border-color: #d0d7de;
+}
+
+.weboffice-cn-fontsize__step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .weboffice-cn-fontsize__menu {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   z-index: 2000;
-  width: 112px;
+  width: 116px;
   max-height: 280px;
   overflow-y: auto;
   padding: 4px;
@@ -76,5 +112,634 @@
 
 .weboffice-cn-fontsize__pt {
   color: #64748b;
+  font-size: 11px;
+}
+
+/* WPS 公文快捷增强工具栏 */
+.weboffice-qbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 12px 6px;
+  border-top: 1px solid #eceff4;
+  background: #f8fafc;
+  color: #1f2328;
+  font-size: 12px;
+  user-select: none;
+}
+
+.weboffice-qbar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.weboffice-qbar__sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: #d8dee6;
+}
+
+.weboffice-qbar__btn {
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #1f2328;
+  font-size: 12px;
+  line-height: 22px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s;
+}
+
+.weboffice-qbar__btn:hover:not(:disabled) {
+  background: #e9eef5;
+  border-color: #d0d7de;
+}
+
+.weboffice-qbar__btn.is-active {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.weboffice-qbar__btn.is-accent {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.weboffice-qbar__btn.is-accent:hover:not(:disabled) {
+  background: #dbeafe;
+}
+
+.weboffice-qbar__btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.weboffice-qbar__dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.weboffice-qbar__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 2100;
+  min-width: 196px;
+  padding: 4px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+.weboffice-qbar__menu-item {
+  width: 100%;
+  display: block;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #1f2328;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.weboffice-qbar__menu-item:hover {
+  background: #f1f5f9;
+}
+
+.weboffice-qbar__menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: #e5e7eb;
+}
+
+.weboffice-qbar__table-grid {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 2100;
+  padding: 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+.weboffice-qbar__table-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  text-align: center;
+}
+
+.weboffice-qbar__grid-cells {
+  display: grid;
+  grid-template-columns: repeat(8, 18px);
+  gap: 3px;
+}
+
+.weboffice-qbar__grid-cell {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 2px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.weboffice-qbar__grid-cell.is-on {
+  background: #dbeafe;
+  border-color: #2563eb;
+}
+
+.weboffice-qbar__symbols {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 2100;
+  width: 236px;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+.weboffice-qbar__symbol-btn {
+  height: 30px;
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.weboffice-qbar__symbol-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.weboffice-qbar__toast {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 11px;
+}
+
+/* 悬浮查找与替换面板 */
+.weboffice-find-replace {
+  position: absolute;
+  top: 112px;
+  right: 20px;
+  z-index: 2200;
+  width: 348px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  color: #1f2328;
+  font-size: 12px;
+}
+
+.weboffice-find-replace__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.weboffice-find-replace__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.weboffice-find-replace__count {
+  margin-left: auto;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.weboffice-find-replace__close {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  font-size: 16px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.weboffice-find-replace__close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.weboffice-find-replace__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.weboffice-find-replace__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #0f172a;
+  outline: none;
+}
+
+.weboffice-find-replace__input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.weboffice-find-replace__icon-btn,
+.weboffice-find-replace__btn {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #1f2328;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.weboffice-find-replace__icon-btn {
+  width: 28px;
+  padding: 0;
+}
+
+.weboffice-find-replace__btn--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.weboffice-find-replace__btn:disabled,
+.weboffice-find-replace__icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.weboffice-find-replace__options {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 2px;
+  color: #475569;
+}
+
+.weboffice-find-replace__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.weboffice-find-replace__notice {
+  margin-top: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 11px;
+}
+
+.weboffice-find-replace__notice--error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+/* 公文段落/页面设置对话框（厘米/字符/磅） */
+.weboffice-dialog {
+  width: min(490px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1f2328;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.24);
+  font-size: 13px;
+}
+
+.weboffice-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.weboffice-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.weboffice-dialog__tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.weboffice-dialog__tab {
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.weboffice-dialog__tab.is-active {
+  color: #1d4ed8;
+  border-bottom-color: #2563eb;
+  font-weight: 600;
+}
+
+.weboffice-dialog__close {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.weboffice-dialog__body {
+  padding: 14px 16px;
+}
+
+.weboffice-dialog__presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.weboffice-dialog__preset-label {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.weboffice-dialog__chip {
+  padding: 4px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.weboffice-dialog__chip:hover {
+  background: #dbeafe;
+}
+
+.weboffice-dialog__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.weboffice-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.weboffice-dialog__label {
+  font-size: 12px;
+  color: #475569;
+}
+
+.weboffice-dialog__hint {
+  align-self: end;
+  padding-bottom: 6px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.weboffice-dialog__input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.weboffice-dialog__input,
+.weboffice-dialog__select,
+.weboffice-dialog__unit-select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.weboffice-dialog__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.weboffice-dialog__unit {
+  flex: none;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.weboffice-dialog__error {
+  margin: 0 16px 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.weboffice-dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.weboffice-dialog__btn {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #1f2328;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.weboffice-dialog__btn--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+/* 底部 WPS 风格状态栏 */
+.weboffice-statusbar {
+  flex: none;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-top: 1px solid #dce3ec;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  user-select: none;
+  z-index: 40;
+}
+
+.weboffice-statusbar__left,
+.weboffice-statusbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.weboffice-statusbar__div {
+  width: 1px;
+  height: 12px;
+  background: #cbd5e1;
+}
+
+.weboffice-statusbar__stats-wrap {
+  position: relative;
+}
+
+.weboffice-statusbar__btn {
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.weboffice-statusbar__btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.weboffice-statusbar__popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 2200;
+  width: 210px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+  color: #1f2328;
+}
+
+.weboffice-statusbar__pop-title {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.weboffice-statusbar__pop-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 12px;
+  color: #475569;
+}
+
+.weboffice-statusbar__pop-row strong {
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.weboffice-statusbar__badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.weboffice-statusbar__zoom-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #334155;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.weboffice-statusbar__zoom-btn:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.weboffice-statusbar__zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.weboffice-statusbar__zoom-select {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1f2328;
   font-size: 11px;
 }

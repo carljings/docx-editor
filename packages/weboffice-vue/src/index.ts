@@ -13,6 +13,7 @@ export {
 export {
   CN_FONT_SIZES,
   CN_OFFICIAL_FONT_FILES,
+  CN_SELECTABLE_FONT_FAMILIES,
   FANDOL_STAND_INS,
   WPS_LOCAL_DEV_STAND_INS,
   createOfficialFontResolver,
@@ -27,6 +28,28 @@ export {
 } from './fonts';
 
 export {
+  CM_PER_INCH,
+  CN_OFFICIAL_SYMBOLS,
+  GB_T_9704_MARGINS_CM,
+  OFFICIAL_PAPER_SIZES,
+  TWIPS_PER_CM,
+  TWIPS_PER_INCH,
+  TWIPS_PER_PT,
+  charsToTwips,
+  cmToTwips,
+  countDocumentWords,
+  ptToTwips,
+  stepChineseFontSize,
+  twipsToChars,
+  twipsToCm,
+  twipsToPt,
+  type DocumentWordStats,
+  type OfficialMarginsCm,
+  type OfficialPaperSizePreset,
+  type OfficialSymbolOption,
+} from './units';
+
+export {
   createWebOfficeAdapter,
   type CursorPosition,
   type InsertTextMode,
@@ -37,6 +60,10 @@ export {
 } from './adapter';
 
 export { ChineseFontSize } from './ChineseFontSize';
+export { FindReplacePanel } from './FindReplacePanel';
+export { OfficialFormatDialog, type OfficialFormatTab } from './OfficialFormatDialog';
+export { WpsQuickBar } from './WpsQuickBar';
+export { WebOfficeStatusBar } from './WebOfficeStatusBar';
 export { WebOfficeDocxEditor } from './WebOfficeDocxEditor';
 
 // 安全透传纯 Apache-2.0 上游核心与 Vue 能力，方便报告中心单包接入
