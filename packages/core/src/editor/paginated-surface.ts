@@ -345,6 +345,7 @@ import { drawingSelectionIntentKey, memberIntent } from './group-member-selectio
 import { bandRanges, createBandItemLookup, reviewBands } from './surface-review-band-class.ts';
 import { createCaretViewFollower, type CaretFollowMode } from './surface-caret-follow.ts';
 import { createInPlaceReplacement } from './surface-replace-in-place.ts';
+import { selectionReplacementInsertOps } from './replacement-ops.ts';
 import {
   contentChildrenOf,
   contentControlSelectionRange,
@@ -4489,12 +4490,12 @@ export function mountPaginatedSurface(
           ? insertOwnerOf(contentControlAtCaret())
           : undefined;
       const insertion = typedInsertText(target, text, inside);
-      const insertOps: TreeDocOp[] = [
-        ...plan.ops,
-        plan.outsidePromptId && insertion.op === 'insertText'
-          ? { ...insertion, bias: 'left' }
-          : insertion,
-      ];
+      const insertOps = selectionReplacementInsertOps(
+        partOfNodeId(session, target.paragraphId) ?? session.part(),
+        plan.ops,
+        insertion,
+        { outsidePrompt: plan.outsidePromptId !== undefined }
+      );
       // Typing at a prompt's edge replaces the prompt, so the text lands where the prompt
       // began; a caret counted from the pressed offset sat past the paragraph's new end.
       const landing = typedLanding(target.paragraphId, target.offset, text.length);
@@ -4646,9 +4647,7 @@ export function mountPaginatedSurface(
       // paragraph's style names as its follower, which is what stops a heading from being
       // followed by a second heading.
       const endsParagraph = splitEndsTheParagraph(position);
-      const tailStyleId = endsParagraph
-        ? nextStyle.followerStyleId(position.paragraphId)
-        : undefined;
+      const { tailStyleId, resetTail, op: splitOp } = nextStyle.splitOp(position, endsParagraph);
       // Persist the insertion face on the marks of an end split. Stored marks alone
       // disappear on a click away and cannot give the empty tail its line height.
       // Only direct properties are copied, leaving the follower style free to inherit.
@@ -4667,12 +4666,6 @@ export function mountPaginatedSurface(
               },
             ]
           : [];
-      const splitOp: TreeDocOp = {
-        op: 'splitParagraph',
-        paragraphId: position.paragraphId,
-        offset: position.offset,
-        tailStyleId,
-      };
       const separatorAuthor = trackedAuthorOrNone();
       const separatorRevision = separatorAuthor
         ? { author: separatorAuthor, date: revisionDateNow() }
@@ -4743,7 +4736,7 @@ export function mountPaginatedSurface(
               const tail = separator ? created.at(-1) : created[0];
               return tail ? collapsedAt({ paragraphId: tail, offset: 0 }) : null;
             },
-            { rearmPending: armed }
+            { rearmPending: resetTail ? undefined : armed }
           ),
         splitTailNow
       );

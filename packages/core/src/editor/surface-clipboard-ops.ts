@@ -19,6 +19,7 @@ import {
   TEXT_BOX_PASTE_REASON,
 } from './surface-drawing-clipboard.ts';
 import { partOfNodeId } from './surface-scope.ts';
+import { selectionReplacementInsertOps } from './replacement-ops.ts';
 import type { DrawingPasteTarget } from './drawing-paste-target.ts';
 // Copy, cut and paste for the paginated surface (paginated-surface seam).
 //
@@ -268,7 +269,6 @@ export function createSurfaceClipboardOps(deps: SurfaceClipboardDeps): SurfaceCl
     // the caret inside it, so the next keystroke landed mid-word.
     const target = plan.replaceAt ?? plan.collapseTo;
     const joined = lines.join('');
-    const ops: TreeDocOp[] = [...plan.ops];
     // Plain text pasted at a caret takes the armed typing format, like typed text — Word
     // formats a plain paste as if you had typed it. Written over the PRE-SPLIT offsets, so
     // the op runs before `splitParagraphMany` cuts the paragraph up.
@@ -277,6 +277,7 @@ export function createSurfaceClipboardOps(deps: SurfaceClipboardDeps): SurfaceCl
       target.offset,
       joined.length
     );
+    const ops: TreeDocOp[] = [];
     if (joined.length > 0) {
       // The caret's own control owns a one-line paste, as it owns a keystroke: at a text
       // control's trailing edge the store's default lands the text beside the control. A
@@ -285,15 +286,24 @@ export function createSurfaceClipboardOps(deps: SurfaceClipboardDeps): SurfaceCl
         !plan.outsidePromptId && plan.ops.length === 0 && lines.length === 1
           ? deps.insertOwner?.()
           : undefined;
-      ops.push({
+      const insertion: TreeDocOp = {
         op: 'insertText',
         paragraphId: target.paragraphId,
         offset: target.offset,
         text: joined,
         ...(inside === undefined ? {} : { inside }),
-        ...(plan.outsidePromptId ? { bias: 'left' as const } : {}),
-      });
-      ops.push(...pendingOps);
+      };
+      ops.push(
+        ...selectionReplacementInsertOps(
+          partOfNodeId(session, target.paragraphId) ?? session.part(),
+          plan.ops,
+          insertion,
+          { outsidePrompt: plan.outsidePromptId !== undefined }
+        ),
+        ...pendingOps
+      );
+    } else {
+      ops.push(...plan.ops);
     }
     const boundaries: number[] = [];
     let consumed = 0;

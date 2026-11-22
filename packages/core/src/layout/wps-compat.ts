@@ -16,10 +16,21 @@ export interface WpsCompatOptions {
    * left-aligned paragraphs as well.
    */
   readonly leftAlignedPunctuationCompression?: boolean;
+  /**
+   * When pressing Enter at the end of a paragraph whose style names a different following
+   * paragraph style (`w:next`), start the new paragraph cleanly in that follower style without
+   * copying the head paragraph's direct paragraph overrides (`w:ind`, `w:spacing`, `w:jc`,
+   * `w:pPr/w:rPr`, etc.) or carrying the head run's direct formatting onto the new caret.
+   *
+   * Matches WPS China Edition official-document editing while preserving MS Word's default
+   * Enter inheritance when disabled.
+   */
+  readonly resetDirectFormattingOnFollowerStyle?: boolean;
 }
 
 let activeWpsCompat: Readonly<Required<WpsCompatOptions>> = Object.freeze({
   leftAlignedPunctuationCompression: false,
+  resetDirectFormattingOnFollowerStyle: false,
 });
 
 /**
@@ -31,11 +42,13 @@ export function setWpsCompatMode(options: WpsCompatOptions | boolean): void {
   if (typeof options === 'boolean') {
     activeWpsCompat = Object.freeze({
       leftAlignedPunctuationCompression: options,
+      resetDirectFormattingOnFollowerStyle: options,
     });
     return;
   }
   activeWpsCompat = Object.freeze({
     leftAlignedPunctuationCompression: Boolean(options.leftAlignedPunctuationCompression),
+    resetDirectFormattingOnFollowerStyle: Boolean(options.resetDirectFormattingOnFollowerStyle),
   });
 }
 

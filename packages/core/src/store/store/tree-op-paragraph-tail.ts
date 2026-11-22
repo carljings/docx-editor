@@ -16,7 +16,8 @@ import { PARAGRAPH_VOCABULARY, propertyElement, schemaInsertIndex } from './tree
 export function withTailStyle(
   pPr: OoxmlElement | undefined,
   tailStyleId: string | null | undefined,
-  nextId: () => string
+  nextId: () => string,
+  resetTailProperties = false
 ): OoxmlNode | undefined {
   if (tailStyleId === undefined) return pPr ? cloneWithNewIds(pPr, nextId) : undefined;
   const currentStyle = pPr?.children.find(
@@ -26,12 +27,19 @@ export function withTailStyle(
     currentStyle && currentStyle.kind !== 'textValue'
       ? (currentStyle.attributes.find((attribute) => attribute.localName === 'val')?.value ?? null)
       : null;
-  const kept = (pPr?.children ?? []).filter(
-    (child) =>
-      child.kind === 'textValue' ||
-      (child.localName !== 'pStyle' &&
-        (child.localName !== 'numPr' || tailStyleId === currentStyleId))
-  );
+  const kept = resetTailProperties
+    ? (pPr?.children ?? []).filter(
+        (child) =>
+          child.kind !== 'textValue' &&
+          child.namespaceUri === WML_NAMESPACE_URI &&
+          child.localName === 'sectPr'
+      )
+    : (pPr?.children ?? []).filter(
+        (child) =>
+          child.kind === 'textValue' ||
+          (child.localName !== 'pStyle' &&
+            (child.localName !== 'numPr' || tailStyleId === currentStyleId))
+      );
   const children = kept.map((child) => cloneWithNewIds(child, nextId));
   if (tailStyleId !== null) {
     children.splice(

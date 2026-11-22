@@ -51,7 +51,10 @@ afterEach(() => {
 
 describe('WPS China Edition layout compatibility mode (opt-in)', () => {
   test('defaults to disabled so MS Word parity is unchanged', () => {
-    expect(getWpsCompatMode()).toEqual({ leftAlignedPunctuationCompression: false });
+    expect(getWpsCompatMode()).toEqual({
+      leftAlignedPunctuationCompression: false,
+      resetDirectFormattingOnFollowerStyle: false,
+    });
     const styles = part(STYLES, '/word/styles.xml').root;
     const settings = part(SETTINGS, '/word/settings.xml').root;
     const cascade = buildStyleCascadeTable(styles, NO_THEME_FONTS, settings);
@@ -69,7 +72,10 @@ describe('WPS China Edition layout compatibility mode (opt-in)', () => {
     const baseline = buildStyleCascadeTable(styles, NO_THEME_FONTS, settings);
 
     setWpsCompatMode(true);
-    expect(getWpsCompatMode()).toEqual({ leftAlignedPunctuationCompression: true });
+    expect(getWpsCompatMode()).toEqual({
+      leftAlignedPunctuationCompression: true,
+      resetDirectFormattingOnFollowerStyle: true,
+    });
     const wpsCascade = buildStyleCascadeTable(styles, NO_THEME_FONTS, settings);
 
     expect(wpsCascade.typography?.wpsLeftPunctuationCompression).toBe(true);

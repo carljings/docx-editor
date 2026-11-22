@@ -574,7 +574,14 @@ function applyValidatedTreeOp(part: OoxmlPart, op: TreeDocOp, options?: EditOpti
       return applyProposeParagraphMerge(part, paragraph, op.revision, options);
     }
     case 'splitParagraph':
-      return applySplit(part, paragraph, op.offset, options, op.tailStyleId);
+      return applySplit(
+        part,
+        paragraph,
+        op.offset,
+        options,
+        op.tailStyleId,
+        op.resetTailProperties
+      );
     case 'splitParagraphMany': {
       const split = applySplitMany(part, paragraph, op.offsets, options);
       if (!op.revision || !split.ok) return split;
@@ -2555,7 +2562,8 @@ function applySplit(
   paragraph: OoxmlParagraphNode,
   offset: number,
   options?: EditOptions,
-  tailStyleId?: string | null
+  tailStyleId?: string | null,
+  resetTailProperties?: boolean
 ): TreeOpResult {
   const nextId = createNodeIdAllocator(part);
   const { children, segments, endIds } = fieldSplitChildren(paragraph, [offset], nextId);
@@ -2625,7 +2633,7 @@ function applySplit(
         )
       : [],
     children: (() => {
-      const tailPPr = withTailStyle(pPr, tailStyleId, nextId);
+      const tailPPr = withTailStyle(pPr, tailStyleId, nextId, resetTailProperties);
       return tailPPr ? [tailPPr, ...tailChildren] : tailChildren;
     })(),
   } as unknown as OoxmlNode;

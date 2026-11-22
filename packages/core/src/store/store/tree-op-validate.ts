@@ -745,6 +745,9 @@ export function validateTreeOp(
       if (op.tailStyleId !== undefined && op.tailStyleId !== null && !isStyleId(op.tailStyleId)) {
         return 'invalid-property-value';
       }
+      if (op.resetTailProperties !== undefined && typeof op.resetTailProperties !== 'boolean') {
+        return 'invalid-property-value';
+      }
       if (splitsSurrogate(paragraph, op.offset)) return 'splits-surrogate-pair';
       if (rangePartiallyOverlapsDrawing(paragraph, op.offset, op.offset + 1)) {
         return 'invalid-range';

@@ -409,6 +409,12 @@ export type TreeDocOp =
        * document's default style is spelled as. Omit to clone the head's style unchanged.
        */
       readonly tailStyleId?: string | null;
+      /**
+       * When true (with `tailStyleId` defined), start the minted tail paragraph cleanly in
+       * `tailStyleId` without copying the head's direct `w:pPr` overrides (indents, spacing,
+       * alignment, mark `w:rPr`, etc.), retaining only a trailing `w:sectPr` when present.
+       */
+      readonly resetTailProperties?: boolean;
     }
   | {
       /**

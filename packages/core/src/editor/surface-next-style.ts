@@ -16,9 +16,9 @@
 // style question, answered against `styles.xml` and the document's own default, rather
 // than a structural edit at the selection.
 
-import type { OoxmlPart } from '@docx-editor.dev/core/store';
+import type { OoxmlPart, TreeDocOp } from '@docx-editor.dev/core/store';
 import { directParagraphProperties, paragraphTextOf } from '@docx-editor.dev/core/store';
-import type { StyleCascadeTable } from '@docx-editor.dev/core/layout';
+import { getWpsCompatMode, type StyleCascadeTable } from '@docx-editor.dev/core/layout';
 
 /** What this lane borrows: the styles index, and the part the split's paragraph lives in. */
 export interface NextStyleDeps {
@@ -54,6 +54,15 @@ export interface NextStyleWrites {
    * Word emits.
    */
   followerStyleId(paragraphId: string): string | null | undefined;
+  /** Plan `splitParagraph` op + whether follower-style Enter should reset direct overrides. */
+  splitOp(
+    position: { readonly paragraphId: string; readonly offset: number },
+    endsParagraph: boolean
+  ): {
+    readonly tailStyleId: string | null | undefined;
+    readonly resetTail: boolean;
+    readonly op: TreeDocOp;
+  };
 }
 
 export function createNextStyleWrites(deps: NextStyleDeps): NextStyleWrites {
@@ -82,6 +91,23 @@ export function createNextStyleWrites(deps: NextStyleDeps): NextStyleWrites {
       const target = table.styles.get(next);
       if (!target || target.type !== 'paragraph') return undefined;
       return next === table.defaultParagraphStyleId ? null : next;
+    },
+
+    splitOp(position, endsParagraph) {
+      const tailStyleId = endsParagraph ? this.followerStyleId(position.paragraphId) : undefined;
+      const resetTail =
+        tailStyleId !== undefined && getWpsCompatMode().resetDirectFormattingOnFollowerStyle;
+      return {
+        tailStyleId,
+        resetTail,
+        op: {
+          op: 'splitParagraph',
+          paragraphId: position.paragraphId,
+          offset: position.offset,
+          tailStyleId,
+          ...(resetTail ? { resetTailProperties: true } : {}),
+        },
+      };
     },
   };
 }
