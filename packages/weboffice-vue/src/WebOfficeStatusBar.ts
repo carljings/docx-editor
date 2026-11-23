@@ -45,6 +45,14 @@ export const WebOfficeStatusBar = defineComponent({
       type: Boolean,
       default: false,
     },
+    outlineOpen: {
+      type: Boolean,
+      default: false,
+    },
+    onToggleOutline: {
+      type: Function as PropType<() => void>,
+      default: undefined,
+    },
   },
   setup(props) {
     // oxlint-disable-next-line react/rules-of-hooks
@@ -267,6 +275,21 @@ export const WebOfficeStatusBar = defineComponent({
           },
           [
             h('div', { class: 'weboffice-statusbar__left' }, [
+              props.onToggleOutline
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: ['weboffice-statusbar__btn', props.outlineOpen ? 'is-active' : ''],
+                      'data-testid': 'statusbar-outline-toggle',
+                      'aria-pressed': String(props.outlineOpen),
+                      title: '切换大纲目录与书签导航面板',
+                      onClick: () => props.onToggleOutline?.(),
+                    },
+                    '大纲'
+                  )
+                : null,
+              props.onToggleOutline ? h('span', { class: 'weboffice-statusbar__div' }) : null,
               h(
                 'span',
                 {

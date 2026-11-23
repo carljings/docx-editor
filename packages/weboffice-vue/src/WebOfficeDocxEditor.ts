@@ -14,6 +14,7 @@ import { FindReplacePanel } from './FindReplacePanel';
 import { OfficialFormatDialog, type OfficialFormatTab } from './OfficialFormatDialog';
 import { WpsQuickBar } from './WpsQuickBar';
 import { WebOfficeStatusBar } from './WebOfficeStatusBar';
+import { WebOfficeOutlineDrawer } from './WebOfficeOutlineDrawer';
 import { createWebOfficeAdapter } from './adapter';
 
 /**
@@ -124,6 +125,7 @@ export const WebOfficeDocxEditor = defineComponent({
     const findReplaceOpen = ref(false);
     const officialDialogOpen = ref(false);
     const officialDialogTab = ref<OfficialFormatTab>('paragraph');
+    const outlineOpen = ref(false);
 
     const wpsCompatActive = computed(() =>
       typeof props.wpsCompat === 'boolean'
@@ -230,6 +232,19 @@ export const WebOfficeDocxEditor = defineComponent({
                   ? h(WebOfficeStatusBar, {
                       hostElement: hostEl.value,
                       wpsCompatActive: wpsCompatActive.value,
+                      outlineOpen: outlineOpen.value,
+                      onToggleOutline: () => {
+                        outlineOpen.value = !outlineOpen.value;
+                      },
+                    })
+                  : null,
+                props.chrome !== false
+                  ? h(WebOfficeOutlineDrawer, {
+                      open: outlineOpen.value,
+                      hostElement: hostEl.value,
+                      onClose: () => {
+                        outlineOpen.value = false;
+                      },
                     })
                   : null,
                 slots.default ? slots.default() : null,

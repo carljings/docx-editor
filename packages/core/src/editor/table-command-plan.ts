@@ -12,7 +12,11 @@ import type {
 } from '@docx-editor.dev/core/contracts/editor';
 import type { DocumentThemeColorEntry } from '../binding/document-theme.ts';
 import type { OoxmlPart, OoxmlTableCellNode } from '../store/package/ooxml-tree.ts';
-import { toggleHeaderRowOp } from './paragraph-format-indent.ts';
+import {
+  isWholeTableBorderPreset,
+  planSetTableBordersOps,
+  toggleHeaderRowOp,
+} from './paragraph-format-indent.ts';
 import { validateTreeOp } from '../store/store/tree-ops.ts';
 import {
   readEditableTableTopology,
@@ -44,7 +48,6 @@ import type {
 } from '../layout/table-interaction-targets.ts';
 import { lowerColorValueForBorder, lowerColorValueForFill } from './color-value-lower.ts';
 import type {
-  TableBorderEdgeTarget,
   TableBorderSpecInput,
   TreeDocColorValue,
   TreeDocOp,
@@ -59,10 +62,6 @@ function isVisualRtlTable(layout: SemanticLayout, tableId: string): boolean {
       occ.table.tableId === tableId &&
       occ.row.cells.some((cell) => cell.logicalGridColumn !== undefined)
   );
-}
-
-function visualBorderTarget(target: TableBorderEdgeTarget, rtl: boolean): TableBorderEdgeTarget {
-  return rtl ? (target === 'left' ? 'right' : target === 'right' ? 'left' : target) : target;
 }
 
 let plannerCallCount = 0;
@@ -370,19 +369,19 @@ function validateTableCommandShape(command: EditorCommand): TableCommandPlan | n
       }
       return null;
     case 'setTableBorders':
-      if (!isPlainObject(command) || command.type !== 'setTableBorders') {
+      if (!isPlainObject(command) || command.type !== 'setTableBorders')
         return refusal('invalidArgs', 'setTableBorders command shape is invalid');
-      }
-      if (command.scope === 'none') {
-        if (typeof command.target !== 'string') {
-          return refusal('invalidArgs', 'border none scope requires a target edge');
-        }
-        return null;
-      }
-      if (!('spec' in command) || !validateBorderSpec(command.spec)) {
-        return refusal('invalidArgs', 'concrete border scopes require a complete spec');
-      }
-      return null;
+      if (command.scope === 'none')
+        return typeof command.target === 'string'
+          ? null
+          : refusal('invalidArgs', 'border none scope requires a target edge');
+      if (isWholeTableBorderPreset(command.scope))
+        return command.spec === undefined || validateBorderSpec(command.spec)
+          ? null
+          : refusal('invalidArgs', 'invalid border spec');
+      return 'spec' in command && validateBorderSpec(command.spec)
+        ? null
+        : refusal('invalidArgs', 'concrete border scopes require a complete spec');
     case 'commitTableColumnDividerResize':
       if (
         !isPlainObject(command) ||
@@ -939,29 +938,23 @@ export function planTableCommand(input: TableCommandPlannerInput): TableCommandP
     }
     case 'setTableBorders': {
       if (!anchor) return refusal('unsupported', 'the selection is not inside a table');
-      if (command.scope === 'none') {
-        const op: TreeDocOp = {
-          op: 'setTableCellBorders',
-          tableId: anchor.tableId,
-          cellIds: anchor.cellIds,
-          scope: 'none',
-          target: visualBorderTarget(
-            command.target as TableBorderEdgeTarget,
-            isVisualRtlTable(input.layout, anchor.tableId)
-          ),
-        };
-        return planValidated(part, [op], { kind: 'preserveSelection' });
-      }
-      const lowered = lowerBorderSpec(command.spec, input.themeColors);
-      if (!lowered.ok) return refusal('invalidArgs', lowered.reason);
-      const op: TreeDocOp = {
-        op: 'setTableCellBorders',
+      const planned = planSetTableBordersOps({
+        part,
         tableId: anchor.tableId,
         cellIds: anchor.cellIds,
-        scope: visualBorderTarget(command.scope, isVisualRtlTable(input.layout, anchor.tableId)),
-        spec: lowered.spec,
-      };
-      return planValidated(part, [op], { kind: 'preserveSelection' });
+        scope: command.scope,
+        target: 'target' in command ? command.target : undefined,
+        spec: 'spec' in command ? command.spec : undefined,
+        rtl: isVisualRtlTable(input.layout, anchor.tableId),
+        lowerSpec: (raw) =>
+          lowerBorderSpec(
+            raw as { style: string; size: number; color: ColorValue },
+            input.themeColors
+          ),
+      });
+      return planned.ok
+        ? planValidated(part, planned.ops, { kind: 'preserveSelection' })
+        : refusal(planned.code, planned.reason);
     }
     case 'commitTableColumnDividerResize':
       return planResizeDivider(

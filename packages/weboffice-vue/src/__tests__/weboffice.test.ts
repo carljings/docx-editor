@@ -17,7 +17,7 @@ import {
   twipsToCm,
 } from '../units';
 import { createWebOfficeAdapter } from '../adapter';
-import { buildPageSetupUpdate } from '../official-dialog-helpers';
+import { buildHeaderFooterDistanceUpdate, buildPageSetupUpdate } from '../official-dialog-helpers';
 import {
   CHAR_SPACING_PRESETS,
   CN_NUMBERING_PRESETS,
@@ -25,6 +25,13 @@ import {
   PARAGRAPH_SHADING_SWATCHES,
   UNDERLINE_STYLE_PRESETS,
 } from '../p1-presets';
+import {
+  OFFICIAL_WATERMARK_PRESETS,
+  TABLE_CELL_FILL_SWATCHES,
+  WATERMARK_COLOR_OPTIONS,
+  buildCustomWatermark,
+  extractOfficialFallbackHeadings,
+} from '../p2-presets';
 
 describe('@weboffice/vue polyfills & Xinchuang browser probe', () => {
   test('installs fallback structuredClone on simulated Chromium 86 global target', () => {
@@ -317,5 +324,116 @@ describe('@weboffice/vue P1 official presets & page columns dirty-tracking', () 
     });
     expect(badGap.error).toBeDefined();
     expect(badGap.hasChanges).toBe(false);
+  });
+});
+
+describe('@weboffice/vue P2 presets, fallback outline & header/footer distances', () => {
+  test('provides official Chinese watermark presets and table cell fill swatches', () => {
+    expect(OFFICIAL_WATERMARK_PRESETS.map((p) => p.label)).toEqual([
+      '内部资料',
+      '机密',
+      '草稿 · 仅供核稿',
+      '严禁外传',
+    ]);
+    expect(WATERMARK_COLOR_OPTIONS.length).toBeGreaterThanOrEqual(4);
+    expect(TABLE_CELL_FILL_SWATCHES[0]?.hex).toBeNull();
+    expect(TABLE_CELL_FILL_SWATCHES.length).toBe(7);
+  });
+
+  test('buildCustomWatermark validates, normalizes whitespace, rejects over-length, and falls back color', () => {
+    const empty = buildCustomWatermark({ text: '   ', layout: 'diagonal', color: 'C0C0C0' });
+    expect(empty.ok).toBe(false);
+
+    const custom = buildCustomWatermark({
+      text: '  执法监督\n  内部核稿  ',
+      layout: 'horizontal',
+      color: 'dc2626',
+    });
+    expect(custom.ok).toBe(true);
+    if (custom.ok) {
+      expect(custom.watermark).toMatchObject({
+        text: '执法监督 内部核稿',
+        fontFamily: '宋体',
+        layout: 'horizontal',
+        color: 'DC2626',
+        transparency: 0.5,
+      });
+    }
+
+    const tooLong = buildCustomWatermark({
+      text: '甲'.repeat(80),
+      layout: 'diagonal',
+      color: 'C0C0C0',
+    });
+    expect(tooLong.ok).toBe(false);
+
+    const fallbackHex = buildCustomWatermark({
+      text: '内部参考',
+      layout: 'diagonal',
+      color: 'not-hex',
+    });
+    expect(fallbackHex.ok).toBe(true);
+    if (fallbackHex.ok) {
+      expect(fallbackHex.watermark.color).toBe('C0C0C0');
+    }
+  });
+
+  test('extractOfficialFallbackHeadings identifies 一、 and （一） official headings while skipping body paragraphs', () => {
+    const items = extractOfficialFallbackHeadings([
+      { blockId: 'b1', text: '   ' },
+      { blockId: 'b2', text: '一、总体工作情况' },
+      { blockId: 'b3', text: '（一）警情受理与处置效率提升' },
+      {
+        blockId: 'b4',
+        text: '一、这是一段超过六十四个字符的正文叙述，明显不属于公文小节标题，应该被大纲自动识别逻辑过滤掉，避免把大段公文正文误判成左侧导航目录里的标题条目。',
+      },
+      { blockId: 'b5', text: '二、下一步工作措施' },
+      { blockId: 'b6', text: '(二) 强化闭环督办' },
+    ]);
+    expect(items).toEqual([
+      { blockId: 'b2', depth: 0, text: '一、总体工作情况' },
+      { blockId: 'b3', depth: 1, text: '（一）警情受理与处置效率提升' },
+      { blockId: 'b5', depth: 0, text: '二、下一步工作措施' },
+      { blockId: 'b6', depth: 1, text: '(二) 强化闭环督办' },
+    ]);
+  });
+
+  test('buildHeaderFooterDistanceUpdate tracks independent dirty flags and validates 0..15 cm range', () => {
+    const clean = buildHeaderFooterDistanceUpdate({
+      headerDirty: false,
+      footerDirty: false,
+      headerDistStr: '1.5',
+      footerDistStr: '1.75',
+    });
+    expect(clean.hasChanges).toBe(false);
+
+    const headerOnly = buildHeaderFooterDistanceUpdate({
+      headerDirty: true,
+      footerDirty: false,
+      headerDistStr: '1.5',
+      footerDistStr: '99',
+    });
+    expect(headerOnly.hasChanges).toBe(true);
+    expect(headerOnly.update.headerDistanceTwips).toBe(cmToTwips(1.5));
+    expect(headerOnly.update.footerDistanceTwips).toBeUndefined();
+
+    const both = buildHeaderFooterDistanceUpdate({
+      headerDirty: true,
+      footerDirty: true,
+      headerDistStr: '1.2',
+      footerDistStr: '1.8',
+    });
+    expect(both.hasChanges).toBe(true);
+    expect(both.update.headerDistanceTwips).toBe(cmToTwips(1.2));
+    expect(both.update.footerDistanceTwips).toBe(cmToTwips(1.8));
+
+    const outOfRange = buildHeaderFooterDistanceUpdate({
+      headerDirty: false,
+      footerDirty: true,
+      headerDistStr: '1.5',
+      footerDistStr: '16',
+    });
+    expect(outOfRange.hasChanges).toBe(false);
+    expect(outOfRange.error).toBeDefined();
   });
 });

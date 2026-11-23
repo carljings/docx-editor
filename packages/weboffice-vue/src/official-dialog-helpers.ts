@@ -222,6 +222,37 @@ export function buildPageSetupUpdate(input: PageDraftInput): {
   return { update: pageUpdate, hasChanges };
 }
 
+export function buildHeaderFooterDistanceUpdate(input: {
+  readonly headerDirty: boolean;
+  readonly footerDirty: boolean;
+  readonly headerDistStr: string;
+  readonly footerDistStr: string;
+}): {
+  readonly update: { headerDistanceTwips?: number; footerDistanceTwips?: number };
+  readonly hasChanges: boolean;
+  readonly error?: string;
+} {
+  const update: { headerDistanceTwips?: number; footerDistanceTwips?: number } = {};
+  let hasChanges = false;
+  if (input.headerDirty) {
+    const v = Number(input.headerDistStr);
+    if (!Number.isFinite(v) || v < 0 || v > 15) {
+      return { update, hasChanges: false, error: '请输入合法的页眉距边界数值（0 ~ 15 厘米）' };
+    }
+    update.headerDistanceTwips = cmToTwips(v);
+    hasChanges = true;
+  }
+  if (input.footerDirty) {
+    const v = Number(input.footerDistStr);
+    if (!Number.isFinite(v) || v < 0 || v > 15) {
+      return { update, hasChanges: false, error: '请输入合法的页脚距边界数值（0 ~ 15 厘米）' };
+    }
+    update.footerDistanceTwips = cmToTwips(v);
+    hasChanges = true;
+  }
+  return { update, hasChanges };
+}
+
 export function renderDialogNumInput(
   label: string,
   value: string,

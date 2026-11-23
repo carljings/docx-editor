@@ -314,10 +314,10 @@ export function execSetHeaderFooterOptions(
   command: Extract<EditorCommand, { type: 'setHeaderFooterOptions' }>
 ): ExecResult {
   const state = mounted.headerFooterState();
-  const sectionIndex = command.sectionIndex ?? state?.sectionIndex;
+  const sectionIndex = command.sectionIndex ?? state?.sectionIndex ?? 0;
   return applyLifecycle(mounted, {
     op: 'setSectionFurnitureOptions',
-    ...(sectionIndex !== undefined ? { sectionIndex } : {}),
+    sectionIndex,
     ...(command.titlePage !== undefined ? { titlePage: command.titlePage } : {}),
     ...(command.evenAndOddHeaders !== undefined
       ? { evenAndOddHeaders: command.evenAndOddHeaders }

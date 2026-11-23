@@ -15,6 +15,7 @@ import {
   twipsToCm,
 } from './units';
 import {
+  buildHeaderFooterDistanceUpdate,
   buildPageSetupUpdate,
   buildParagraphFormatUpdate,
   renderDialogNumInput,
@@ -114,6 +115,8 @@ export const OfficialFormatDialog = defineComponent({
     const columnsCustomCount = ref<number | null>(null);
     const columnsSpaceStr = ref('0.75');
     const columnsSeparator = ref(false);
+    const headerDistStr = ref('');
+    const footerDistStr = ref('');
     const pageScope = ref<'document' | 'section'>('document');
 
     const pageDirty = reactive({
@@ -126,26 +129,13 @@ export const OfficialFormatDialog = defineComponent({
       columnsCount: false,
       columnsSpace: false,
       columnsSep: false,
+      headerDist: false,
+      footerDist: false,
     });
 
     function resetDirty() {
-      paraDirty.align = false;
-      paraDirty.indentLeft = false;
-      paraDirty.indentRight = false;
-      paraDirty.special = false;
-      paraDirty.spaceBefore = false;
-      paraDirty.spaceAfter = false;
-      paraDirty.lineSpacing = false;
-
-      pageDirty.paper = false;
-      pageDirty.orientation = false;
-      pageDirty.marginTop = false;
-      pageDirty.marginBottom = false;
-      pageDirty.marginLeft = false;
-      pageDirty.marginRight = false;
-      pageDirty.columnsCount = false;
-      pageDirty.columnsSpace = false;
-      pageDirty.columnsSep = false;
+      for (const k of Object.keys(paraDirty) as Array<keyof typeof paraDirty>) paraDirty[k] = false;
+      for (const k of Object.keys(pageDirty) as Array<keyof typeof pageDirty>) pageDirty[k] = false;
     }
 
     function seedFromEditor() {
@@ -241,6 +231,15 @@ export const OfficialFormatDialog = defineComponent({
           ps.columns !== undefined ? String(twipsToCm(ps.columns.gapTwips)) : '0.75';
         columnsSeparator.value = Boolean(ps.columns?.separator);
       }
+      const hf = editorRef.value?.getHeaderFooterState();
+      headerDistStr.value =
+        typeof hf?.headerDistanceTwips === 'number'
+          ? String(twipsToCm(hf.headerDistanceTwips))
+          : '';
+      footerDistStr.value =
+        typeof hf?.footerDistanceTwips === 'number'
+          ? String(twipsToCm(hf.footerDistanceTwips))
+          : '';
     }
 
     watch(
@@ -389,14 +388,30 @@ export const OfficialFormatDialog = defineComponent({
         errorText.value = error;
         return;
       }
-      if (!hasChanges) {
+      const hfDist = buildHeaderFooterDistanceUpdate({
+        headerDirty: pageDirty.headerDist,
+        footerDirty: pageDirty.footerDist,
+        headerDistStr: headerDistStr.value,
+        footerDistStr: footerDistStr.value,
+      });
+      if (hfDist.error) {
+        errorText.value = hfDist.error;
+        return;
+      }
+      if (!hasChanges && !hfDist.hasChanges) {
         handleClose();
         return;
       }
-      const ok = pageSetup.apply(pageUpdate);
-      if (!ok) {
+      if (hasChanges && !pageSetup.apply(pageUpdate)) {
         errorText.value = '当前文档无法应用页面设置（请检查页边距是否过大或处于只读模式）';
         return;
+      }
+      if (hfDist.hasChanges && editorRef.value) {
+        const res = editorRef.value.exec({ type: 'setHeaderFooterOptions', ...hfDist.update });
+        if (!res.ok) {
+          errorText.value = res.reason || '当前无法修改页眉/页脚距边界';
+          return;
+        }
       }
       handleClose();
     }
@@ -882,6 +897,36 @@ export const OfficialFormatDialog = defineComponent({
                           h('span', null, '在分栏间显示竖线'),
                         ]),
                       ]),
+                      numInput(
+                        '页眉距边界',
+                        headerDistStr.value,
+                        (v) => {
+                          headerDistStr.value = v;
+                          pageDirty.headerDist = true;
+                        },
+                        {
+                          unit: '厘米',
+                          min: 0,
+                          max: 15,
+                          testId: 'page-header-dist',
+                          placeholder: '默认 1.5',
+                        }
+                      ),
+                      numInput(
+                        '页脚距边界',
+                        footerDistStr.value,
+                        (v) => {
+                          footerDistStr.value = v;
+                          pageDirty.footerDist = true;
+                        },
+                        {
+                          unit: '厘米',
+                          min: 0,
+                          max: 15,
+                          testId: 'page-footer-dist',
+                          placeholder: '默认 1.75',
+                        }
+                      ),
                       h('label', { class: 'weboffice-dialog__field' }, [
                         h('span', { class: 'weboffice-dialog__label' }, '应用于'),
                         h(

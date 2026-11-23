@@ -1,7 +1,8 @@
 import type { OoxmlElement, OoxmlPart } from '../store/package/ooxml-tree.ts';
 import { readEditableTableTopology } from '../store/store/tree-op-table-topology.ts';
 import { wmlAttributeValue, wmlChildNamed } from '../store/store/tree-op-table-shared.ts';
-import type { TreeDocOp } from '../store/store/tree-ops.ts';
+import { validateTreeOp, type TreeDocOp } from '../store/store/tree-ops.ts';
+import type { TableBorderEdgeTarget, TableBorderSpecInput } from '../store/store/tree-op-types.ts';
 
 /**
  * Write signed character-unit first-line indent (`w:firstLineChars` / `w:hangingChars`)
@@ -153,4 +154,154 @@ export function toggleHeaderRowOp(
     tableId,
     headerRowCount: nextHeaderRowCount,
   };
+}
+
+export type WholeTableBorderPreset = 'threeLine' | 'tableAll' | 'tableNone';
+
+export function isWholeTableBorderPreset(scope: unknown): scope is WholeTableBorderPreset {
+  return scope === 'threeLine' || scope === 'tableAll' || scope === 'tableNone';
+}
+
+const DEFAULT_THREE_LINE_SPEC: TableBorderSpecInput = {
+  style: 'single',
+  size: 12,
+  color: { kind: 'hex', value: '000000' },
+};
+
+const DEFAULT_TABLE_ALL_SPEC: TableBorderSpecInput = {
+  style: 'single',
+  size: 4,
+  color: { kind: 'hex', value: '334155' },
+};
+
+/**
+ * Build atomic whole-table `setTableCellBorders` ops for official table presets:
+ * - `'threeLine'`: GB/T 7713 / official three-line table (1.5pt top & bottom, 0.75pt under header).
+ * - `'tableAll'`: uniform thin grid across the whole table.
+ * - `'tableNone'`: explicit `val="none"` across all cells (overriding `TableGrid` style).
+ */
+export function wholeTableBorderPresetOps(
+  part: OoxmlPart,
+  tableId: string,
+  preset: WholeTableBorderPreset,
+  spec?: TableBorderSpecInput
+): TreeDocOp[] | null {
+  const topology = readEditableTableTopology(part.root, tableId);
+  if (!topology.ok || topology.topology.rows.length === 0) return null;
+  const rows = topology.topology.rows;
+  const allCellIds = [...new Set(rows.flatMap((row) => row.cells.map((cell) => cell.id)))];
+  if (allCellIds.length === 0) return null;
+
+  if (preset === 'tableNone') {
+    return [
+      { op: 'setTableCellBorders', tableId, cellIds: allCellIds, scope: 'none', target: 'all' },
+    ];
+  }
+  if (preset === 'tableAll') {
+    return [
+      {
+        op: 'setTableCellBorders',
+        tableId,
+        cellIds: allCellIds,
+        scope: 'all',
+        spec: spec ?? DEFAULT_TABLE_ALL_SPEC,
+      },
+    ];
+  }
+
+  const thick = spec ?? DEFAULT_THREE_LINE_SPEC;
+  const thin: TableBorderSpecInput = {
+    style: thick.style,
+    size: Math.max(4, Math.round(thick.size / 2)),
+    color: thick.color,
+  };
+  const ops: TreeDocOp[] = [
+    { op: 'setTableCellBorders', tableId, cellIds: allCellIds, scope: 'none', target: 'all' },
+    { op: 'setTableCellBorders', tableId, cellIds: allCellIds, scope: 'top', spec: thick },
+    { op: 'setTableCellBorders', tableId, cellIds: allCellIds, scope: 'bottom', spec: thick },
+  ];
+
+  if (rows.length > 1) {
+    const headerCount = tableHeaderRowCount(part, tableId);
+    const startRow = headerCount > 0 && headerCount < rows.length ? headerCount - 1 : 0;
+    for (let endRow = startRow; endRow < rows.length - 1; endRow += 1) {
+      const headerCellIds = [
+        ...new Set(rows.slice(0, endRow + 1).flatMap((row) => row.cells.map((cell) => cell.id))),
+      ];
+      const midOp: TreeDocOp = {
+        op: 'setTableCellBorders',
+        tableId,
+        cellIds: headerCellIds,
+        scope: 'bottom',
+        spec: thin,
+      };
+      if (validateTreeOp(part, midOp) === null) {
+        ops.push(midOp);
+        const bodyCellIds = [
+          ...new Set(rows.slice(endRow + 1).flatMap((row) => row.cells.map((cell) => cell.id))),
+        ];
+        if (bodyCellIds.length > 0) {
+          const bodyTopOp: TreeDocOp = {
+            op: 'setTableCellBorders',
+            tableId,
+            cellIds: bodyCellIds,
+            scope: 'top',
+            spec: thin,
+          };
+          if (validateTreeOp(part, bodyTopOp) === null) ops.push(bodyTopOp);
+        }
+        break;
+      }
+    }
+  }
+  return ops;
+}
+
+export function planSetTableBordersOps(args: {
+  readonly part: OoxmlPart;
+  readonly tableId: string;
+  readonly cellIds: readonly string[];
+  readonly scope: string;
+  readonly target?: string;
+  readonly spec?: unknown;
+  readonly rtl: boolean;
+  readonly lowerSpec: (
+    spec: unknown
+  ) =>
+    | { readonly ok: true; readonly spec: TableBorderSpecInput }
+    | { readonly ok: false; readonly reason: string };
+}):
+  | { readonly ok: true; readonly ops: readonly TreeDocOp[] }
+  | { readonly ok: false; readonly code: 'invalidArgs' | 'unsupported'; readonly reason: string } {
+  const { part, tableId, cellIds, scope, target, spec, rtl, lowerSpec } = args;
+  const flip = (edge: TableBorderEdgeTarget): TableBorderEdgeTarget =>
+    rtl ? (edge === 'left' ? 'right' : edge === 'right' ? 'left' : edge) : edge;
+  if (isWholeTableBorderPreset(scope)) {
+    const lowered = spec !== undefined ? lowerSpec(spec) : null;
+    if (lowered && !lowered.ok) return { ok: false, code: 'invalidArgs', reason: lowered.reason };
+    const ops = wholeTableBorderPresetOps(part, tableId, scope, lowered?.spec);
+    return ops
+      ? { ok: true, ops }
+      : { ok: false, code: 'unsupported', reason: 'cannot apply whole-table border preset' };
+  }
+  if (scope === 'none') {
+    const op: TreeDocOp = {
+      op: 'setTableCellBorders',
+      tableId,
+      cellIds,
+      scope: 'none',
+      target: flip(target as TableBorderEdgeTarget),
+    };
+    return { ok: true, ops: [op] };
+  }
+  const lowered = lowerSpec(spec);
+  if (!lowered.ok) return { ok: false, code: 'invalidArgs', reason: lowered.reason };
+  const op: TreeDocOp = {
+    op: 'setTableCellBorders',
+    tableId,
+    cellIds,
+    scope: flip(scope as TableBorderEdgeTarget),
+    spec: lowered.spec,
+  };
+  return { ok: true, ops: [op] };
 }

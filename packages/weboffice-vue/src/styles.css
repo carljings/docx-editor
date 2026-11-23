@@ -51,14 +51,20 @@
 }
 
 .weboffice-host--compact .weboffice-qbar {
-  padding: 2px 8px;
+  padding: 2px 6px;
   gap: 1px;
+  font-size: 11.5px;
 }
 
 .weboffice-host--compact .weboffice-qbar__btn {
   height: 22px;
   line-height: 20px;
-  padding: 0 4px;
+  padding: 0 3px;
+  font-size: 11.5px;
+}
+
+.weboffice-host--compact .weboffice-qbar__sep {
+  margin: 0 1px;
 }
 
 .weboffice-host--compact .docx-editor [data-testid='docx-editor-ruler-row'] {
@@ -228,6 +234,13 @@
   background: #dbeafe;
   border-color: #93c5fd;
   color: #1d4ed8;
+  font-weight: 600;
+}
+
+.weboffice-qbar__btn.is-locked {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
   font-weight: 600;
 }
 
@@ -1096,5 +1109,322 @@
   border-radius: 4px;
   background: #ffffff;
   color: #1f2328;
+  font-size: 11px;
+}
+
+.weboffice-statusbar__btn.is-active {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+/* P2：页眉/页脚/公文水印与高级表格面板 */
+.weboffice-qbar__menu--page-extras {
+  width: min(278px, calc(100vw - 16px));
+  padding: 6px;
+}
+
+.weboffice-qbar__section-title--sub {
+  margin-top: 6px;
+  padding-top: 4px;
+}
+
+.weboffice-qbar__section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.weboffice-qbar__wm-badge {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.weboffice-qbar__wm-custom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+.weboffice-qbar__wm-input {
+  flex: 1 1 90px;
+  min-width: 0;
+  max-width: none;
+}
+
+.weboffice-qbar__mini-select {
+  flex: none;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 11px;
+}
+
+.weboffice-qbar__wm-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.weboffice-qbar__wm-actions .weboffice-qbar__custom-apply {
+  flex: 1 1 auto;
+  margin-left: 0;
+}
+
+.weboffice-qbar__wm-actions .weboffice-qbar__chip-btn {
+  flex: none;
+  height: 24px;
+  padding: 0 10px;
+}
+
+.weboffice-qbar__table-adv {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.weboffice-qbar__split-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 6px;
+}
+
+.weboffice-qbar__split-input {
+  width: 40px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 11px;
+  text-align: center;
+  color: #0f172a;
+}
+
+.weboffice-qbar__split-row .weboffice-qbar__chip-btn {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 8px;
+}
+
+.weboffice-qbar__valign-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.weboffice-qbar__chip-btn.is-accent {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.weboffice-qbar__chip-btn.is-accent:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+/* P2：左侧大纲、自动目录与书签导航抽屉 */
+.weboffice-outline-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 28px;
+  left: 0;
+  z-index: 2150;
+  box-sizing: border-box;
+  width: min(244px, calc(100% - 16px));
+  max-width: calc(100vw - 16px);
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-right: 1px solid #cbd5e1;
+  box-shadow: 6px 0 22px rgba(15, 23, 42, 0.14);
+  color: #1f2328;
+  font-size: 12px;
+}
+
+.weboffice-outline__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.weboffice-outline__tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.weboffice-outline__tab {
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.weboffice-outline__tab.is-active {
+  color: #1d4ed8;
+  border-bottom-color: #2563eb;
+  font-weight: 600;
+}
+
+.weboffice-outline__close {
+  width: 22px;
+  height: 22px;
+  margin-bottom: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  font-size: 16px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.weboffice-outline__close:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.weboffice-outline__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 8px;
+}
+
+.weboffice-outline__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.weboffice-outline__hint {
+  padding: 2px 6px 4px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.weboffice-outline__item {
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #1e293b;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.weboffice-outline__item:hover {
+  background: #f1f5f9;
+}
+
+.weboffice-outline__item.is-active {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.weboffice-outline__empty {
+  flex: 1 1 auto;
+  padding: 16px 8px;
+  color: #64748b;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.weboffice-outline__toc-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.weboffice-outline__bm-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.weboffice-outline__bm-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.weboffice-outline__bm-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.weboffice-outline__bm-row .weboffice-outline__item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.weboffice-outline__bm-del {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.weboffice-outline__bm-del:hover:not(:disabled) {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.weboffice-outline__bm-del:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.weboffice-outline__feedback {
+  padding: 5px 8px;
+  border-top: 1px solid #e2e8f0;
+  background: #eff6ff;
+  color: #1d4ed8;
   font-size: 11px;
 }

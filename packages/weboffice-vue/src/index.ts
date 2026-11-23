@@ -64,7 +64,18 @@ export { FindReplacePanel } from './FindReplacePanel';
 export { OfficialFormatDialog, type OfficialFormatTab } from './OfficialFormatDialog';
 export { WpsQuickBar } from './WpsQuickBar';
 export { WebOfficeStatusBar } from './WebOfficeStatusBar';
+export { WebOfficeOutlineDrawer } from './WebOfficeOutlineDrawer';
 export { WebOfficeDocxEditor } from './WebOfficeDocxEditor';
+export {
+  OFFICIAL_WATERMARK_PRESETS,
+  TABLE_CELL_FILL_SWATCHES,
+  WATERMARK_COLOR_OPTIONS,
+  buildCustomWatermark,
+  extractOfficialFallbackHeadings,
+  type FallbackOfficialHeading,
+  type OfficialWatermarkPreset,
+  type TableCellFillSwatch,
+} from './p2-presets';
 
 // 安全透传纯 Apache-2.0 上游核心与 Vue 能力，方便报告中心单包接入
 export {

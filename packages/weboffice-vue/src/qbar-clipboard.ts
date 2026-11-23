@@ -151,3 +151,75 @@ export async function readClipboardPayload(
   }
   throw new Error('clipboard read unavailable');
 }
+
+export async function executeClipboardCopyOrCut(opts: {
+  readonly ed: Editor;
+  readonly getCurrentEditor: () => Editor | null;
+  readonly action: 'copy' | 'cut';
+  readonly cutTicket: number;
+  readonly getLatestCutTicket: () => number;
+}): Promise<string> {
+  const { ed, getCurrentEditor, action, cutTicket, getLatestCutTicket } = opts;
+  const gate = ed.can({ type: action });
+  if (!gate.ok) {
+    return action === 'copy' ? '请先选中要复制的内容' : '请先选中要剪切的内容';
+  }
+  const flavours = ed.query({ type: 'copyFlavours' });
+  if (!flavours || flavours.reason || (!flavours.text && !flavours.html)) {
+    return action === 'copy' ? '当前选区不支持复制' : '当前选区不支持剪切';
+  }
+  const cutPrecondition =
+    action === 'cut' ? captureCutPrecondition(ed, flavours.drawingNodeId ?? null) : null;
+  if (action === 'cut' && !cutPrecondition) {
+    return '当前文档状态不稳定，请重新剪切';
+  }
+  const wrote = await writeClipboardRichChecked(flavours.text, flavours.html);
+  if (!wrote) {
+    if (getCurrentEditor() === ed) ed.focus();
+    return action === 'copy'
+      ? '剪贴板写入被拒绝，请使用 Ctrl+C 复制'
+      : '剪贴板写入被拒绝，未删除所选内容（请使用 Ctrl+X）';
+  }
+  if (action === 'cut') {
+    if (
+      cutTicket !== getLatestCutTicket() ||
+      !cutPrecondition ||
+      !matchesCutPrecondition(cutPrecondition, getCurrentEditor())
+    ) {
+      if (getCurrentEditor() === ed) ed.focus();
+      return '选区或文档已变化，内容已复制但未删除';
+    }
+    const delRes = ed.exec({ type: 'deleteText' });
+    if (!delRes.ok) {
+      if (getCurrentEditor() === ed) ed.focus();
+      return `剪切失败：${delRes.reason || '当前位置不可编辑'}`;
+    }
+  }
+  if (getCurrentEditor() === ed) ed.focus();
+  return action === 'copy' ? '已复制' : '已剪切';
+}
+
+export async function executeClipboardPaste(
+  ed: Editor,
+  plainOnly: boolean
+): Promise<string | null> {
+  if (!navigator.clipboard) {
+    ed.focus();
+    return '请直接使用快捷键 Ctrl+V / Ctrl+Shift+V 粘贴';
+  }
+  try {
+    const { text, html } = await readClipboardPayload(plainOnly);
+    if (!text && !html) {
+      ed.focus();
+      return '剪贴板为空';
+    }
+    const res = plainOnly
+      ? ed.exec({ type: 'pasteWithoutFormatting', text })
+      : ed.exec({ type: 'paste', text, ...(html ? { html } : {}) });
+    ed.focus();
+    return res.ok ? null : `粘贴失败：${res.reason || '当前位置不可编辑'}`;
+  } catch {
+    ed.focus();
+    return '浏览器限制读取剪贴板，请按 Ctrl+V / Ctrl+Shift+V';
+  }
+}

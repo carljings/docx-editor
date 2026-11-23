@@ -1128,6 +1128,7 @@ export interface EditorCommands
    */
   setTableBorders:
     | { scope: 'none'; target: TableBorderEdgeTarget }
+    | { scope: 'threeLine' | 'tableAll' | 'tableNone'; spec?: TableBorderSpec }
     | { scope: TableBorderEdgeTarget; spec: TableBorderSpec };
 
   /**

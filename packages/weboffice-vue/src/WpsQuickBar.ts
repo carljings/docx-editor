@@ -14,27 +14,23 @@ import {
 import {
   useDocxEditor,
   useEditorCommand,
+  useEditorEvent,
   useEditorState,
+  useHeaderFooterState,
   useParagraphFormat,
 } from '@docx-editor.dev/vue';
 import type { EditorSnapshot } from '@docx-editor.dev/core/contracts/editor';
-import type { ToggleListPreset } from '@docx-editor.dev/core/contracts/types';
+import type {
+  ToggleListPreset,
+  Watermark,
+  WatermarkLayout,
+} from '@docx-editor.dev/core/contracts/types';
 import type { ParagraphBorderEdgeWrite } from '@docx-editor.dev/core/store';
-import {
-  DEFAULT_IMAGE_RESOURCE_LIMITS,
-  sniffImageMime as sniffImageBytesMime,
-  validateRasterHeader,
-} from '@docx-editor.dev/core/editor';
-import { CN_OFFICIAL_SYMBOLS, charsToTwips } from './units';
+import { charsToTwips } from './units';
 import type { OfficialFormatTab } from './OfficialFormatDialog';
-import {
-  captureCutPrecondition,
-  isSupportedRasterMime,
-  matchesCutPrecondition,
-  readClipboardPayload,
-  writeClipboardRichChecked,
-} from './qbar-clipboard';
+import { executeClipboardCopyOrCut, executeClipboardPaste } from './qbar-clipboard';
 import type { UnderlineStylePreset } from './p1-presets';
+import { buildCustomWatermark } from './p2-presets';
 import {
   clampPopoverWithinViewport,
   renderBordersMenu,
@@ -42,24 +38,32 @@ import {
   renderTableContextSection,
   renderTextEffectsMenu,
 } from './qbar-p1-menus';
+import {
+  renderLineSpacingMenu,
+  renderPageExtrasMenu,
+  renderPasteMenu,
+  renderSymbolsMenu,
+  renderTableAdvancedSection,
+  renderTableInsertGrid,
+  type HeaderFooterQuickAction,
+} from './qbar-p2-menus';
+import {
+  insertRasterImageFromFile,
+  runHeaderFooterQuickAction,
+  runTableQuickAction,
+  type TableContextQuickAction,
+} from './qbar-p2-actions';
 
 type QuickPopover =
-  'none' | 'lineSpacing' | 'numbering' | 'borders' | 'textEffects' | 'table' | 'symbols' | 'paste';
-
-const LINE_SPACING_PRESETS: ReadonlyArray<{
-  readonly label: string;
-  readonly rule: 'exact' | 'multiple';
-  readonly value: number;
-  readonly testId: string;
-}> = [
-  { label: '固定值 28 磅（公文标准）', rule: 'exact', value: 28, testId: 'ls-exact-28' },
-  { label: '固定值 29 磅', rule: 'exact', value: 29, testId: 'ls-exact-29' },
-  { label: '固定值 30 磅', rule: 'exact', value: 30, testId: 'ls-exact-30' },
-  { label: '固定值 22 磅', rule: 'exact', value: 22, testId: 'ls-exact-22' },
-  { label: '单倍行距 (1.0×)', rule: 'multiple', value: 1, testId: 'ls-mult-1' },
-  { label: '1.5 倍行距', rule: 'multiple', value: 1.5, testId: 'ls-mult-1.5' },
-  { label: '2 倍行距', rule: 'multiple', value: 2, testId: 'ls-mult-2' },
-];
+  | 'none'
+  | 'lineSpacing'
+  | 'numbering'
+  | 'borders'
+  | 'textEffects'
+  | 'pageExtras'
+  | 'table'
+  | 'symbols'
+  | 'paste';
 
 const selectFontSizePt = (snapshot: EditorSnapshot): number => {
   const pt = snapshot.formatting?.fontSizePt;
@@ -122,6 +126,18 @@ export const WpsQuickBar = defineComponent({
     // oxlint-disable-next-line react/rules-of-hooks
     const imageInsertCmd = useEditorCommand('image.insert');
     // oxlint-disable-next-line react/rules-of-hooks
+    const formatPainterCmd = useEditorCommand('format.painter');
+    // oxlint-disable-next-line react/rules-of-hooks
+    const clearFormatCmd = useEditorCommand('format.clear');
+    // oxlint-disable-next-line react/rules-of-hooks
+    const footnoteCmd = useEditorCommand('insert.footnote');
+    // oxlint-disable-next-line react/rules-of-hooks
+    const endnoteCmd = useEditorCommand('insert.endnote');
+    // oxlint-disable-next-line react/rules-of-hooks
+    const textBoxCmd = useEditorCommand('insert.textBox');
+    // oxlint-disable-next-line react/rules-of-hooks
+    const hfState = useHeaderFooterState();
+    // oxlint-disable-next-line react/rules-of-hooks
     const paragraph = useParagraphFormat();
     // oxlint-disable-next-line react/rules-of-hooks
     const currentFontSizePt = useEditorState(selectFontSizePt);
@@ -142,7 +158,15 @@ export const WpsQuickBar = defineComponent({
     const fileInputRef = ref<HTMLInputElement | null>(null);
     const openPopover = ref<QuickPopover>('none');
     const tableHover = ref({ rows: 3, cols: 4 });
+    const splitLimits = ref<{ maxRows: number; maxCols: number } | null>(null);
+    const splitRows = ref(1);
+    const splitCols = ref(2);
     const customSpacingPt = ref('1.5');
+    const watermarkState = ref<{ has: boolean; text: string }>({ has: false, text: '' });
+    const customWmText = ref('');
+    const customWmLayout = ref<WatermarkLayout>('diagonal');
+    const customWmColor = ref('C0C0C0');
+    const localTitlePage = ref(false);
     const toastMsg = ref('');
     const imageInsertBusy = ref(false);
     let cutSeq = 0;
@@ -187,8 +211,42 @@ export const WpsQuickBar = defineComponent({
       clampPopoverWithinViewport(barRef.value, props.hostElement);
     }
 
+    function syncDynamicPopoverState(next: QuickPopover) {
+      const ed = editorRef.value;
+      if (!ed) return;
+      if (next === 'pageExtras') {
+        const wm = ed.query({ type: 'watermark' });
+        watermarkState.value = { has: wm !== null, text: wm?.text ?? '' };
+        if (wm?.text) customWmText.value = wm.text;
+        if (wm?.layout) customWmLayout.value = wm.layout;
+        if (wm?.color) customWmColor.value = wm.color.toUpperCase();
+      } else if (next === 'table' && inTable.value) {
+        const cfg = ed.query({ type: 'splitCellConfig' });
+        splitLimits.value = cfg;
+        if (cfg) {
+          splitRows.value = Math.min(Math.max(1, splitRows.value), cfg.maxRows);
+          splitCols.value = Math.min(Math.max(1, splitCols.value), cfg.maxCols);
+        }
+      }
+    }
+
+    function resetDocLocalState() {
+      localTitlePage.value = false;
+      watermarkState.value = { has: false, text: '' };
+    }
+
+    // oxlint-disable-next-line react/rules-of-hooks
+    useEditorEvent('change', (ev) => {
+      if (ev.source === 'load') resetDocLocalState();
+    });
+
+    watch(editorRef, () => {
+      resetDocLocalState();
+    });
+
     watch(openPopover, async (next) => {
       if (next === 'none') return;
+      syncDynamicPopoverState(next);
       await nextTick();
       clampActivePopover();
     });
@@ -218,80 +276,23 @@ export const WpsQuickBar = defineComponent({
     async function runCopyOrCut(action: 'copy' | 'cut') {
       const ed = editorRef.value;
       if (!ed) return;
-      const gate = ed.can({ type: action });
-      if (!gate.ok) {
-        showToast(action === 'copy' ? '请先选中要复制的内容' : '请先选中要剪切的内容');
-        return;
-      }
-      const flavours = ed.query({ type: 'copyFlavours' });
-      if (!flavours || flavours.reason || (!flavours.text && !flavours.html)) {
-        showToast(action === 'copy' ? '当前选区不支持复制' : '当前选区不支持剪切');
-        return;
-      }
       const cutTicket = action === 'cut' ? ++cutSeq : 0;
-      const cutPrecondition =
-        action === 'cut' ? captureCutPrecondition(ed, flavours.drawingNodeId ?? null) : null;
-      if (action === 'cut' && !cutPrecondition) {
-        showToast('当前文档状态不稳定，请重新剪切');
-        return;
-      }
-      const wrote = await writeClipboardRichChecked(flavours.text, flavours.html);
-      if (!wrote) {
-        showToast(
-          action === 'copy'
-            ? '剪贴板写入被拒绝，请使用 Ctrl+C 复制'
-            : '剪贴板写入被拒绝，未删除所选内容（请使用 Ctrl+X）'
-        );
-        if (editorRef.value === ed) ed.focus();
-        return;
-      }
-      if (action === 'cut') {
-        if (
-          cutTicket !== cutSeq ||
-          !cutPrecondition ||
-          !matchesCutPrecondition(cutPrecondition, editorRef.value)
-        ) {
-          showToast('选区或文档已变化，内容已复制但未删除');
-          if (editorRef.value === ed) ed.focus();
-          return;
-        }
-        const delRes = ed.exec({ type: 'deleteText' });
-        if (!delRes.ok) {
-          showToast(`剪切失败：${delRes.reason || '当前位置不可编辑'}`);
-          if (editorRef.value === ed) ed.focus();
-          return;
-        }
-      }
-      showToast(action === 'copy' ? '已复制' : '已剪切');
-      if (editorRef.value === ed) ed.focus();
+      const msg = await executeClipboardCopyOrCut({
+        ed,
+        getCurrentEditor: () => editorRef.value,
+        action,
+        cutTicket,
+        getLatestCutTicket: () => cutSeq,
+      });
+      showToast(msg);
     }
 
     async function runPaste(plainOnly: boolean) {
       openPopover.value = 'none';
       const ed = editorRef.value;
       if (!ed) return;
-      if (!navigator.clipboard) {
-        showToast('请直接使用快捷键 Ctrl+V / Ctrl+Shift+V 粘贴');
-        ed.focus();
-        return;
-      }
-      try {
-        const { text, html } = await readClipboardPayload(plainOnly);
-        if (!text && !html) {
-          showToast('剪贴板为空');
-          ed.focus();
-          return;
-        }
-        const res = plainOnly
-          ? ed.exec({ type: 'pasteWithoutFormatting', text })
-          : ed.exec({ type: 'paste', text, ...(html ? { html } : {}) });
-        if (!res.ok) {
-          showToast(`粘贴失败：${res.reason || '当前位置不可编辑'}`);
-        }
-      } catch {
-        showToast('浏览器限制读取剪贴板，请按 Ctrl+V / Ctrl+Shift+V');
-      }
-      ed.focus();
+      const err = await executeClipboardPaste(ed, plainOnly);
+      if (err) showToast(err);
     }
 
     function applyLineSpacingPreset(rule: 'exact' | 'multiple', value: number) {
@@ -418,51 +419,104 @@ export const WpsQuickBar = defineComponent({
       applyCharSpacing(Math.round(pt * 20), `${pt} 磅`);
     }
 
-    function runTableContextAction(
-      action:
-        | 'mergeCells'
-        | 'toggleHeaderRow'
-        | 'rowAbove'
-        | 'rowBelow'
-        | 'colLeft'
-        | 'colRight'
-        | 'deleteRow'
-        | 'deleteTable'
-    ) {
+    function runTableContextAction(action: TableContextQuickAction) {
       openPopover.value = 'none';
       const ed = editorRef.value;
       if (!ed) return;
-      const res =
-        action === 'mergeCells'
-          ? ed.exec({ type: 'mergeCells' })
-          : action === 'toggleHeaderRow'
-            ? ed.exec({ type: 'toggleHeaderRow' })
-            : action === 'rowAbove'
-              ? ed.exec({ type: 'insertRow', where: 'above' })
-              : action === 'rowBelow'
-                ? ed.exec({ type: 'insertRow', where: 'below' })
-                : action === 'colLeft'
-                  ? ed.exec({ type: 'insertColumn', where: 'left' })
-                  : action === 'colRight'
-                    ? ed.exec({ type: 'insertColumn', where: 'right' })
-                    : action === 'deleteRow'
-                      ? ed.exec({ type: 'deleteRow' })
-                      : ed.exec({ type: 'deleteTable' });
+      const out = runTableQuickAction(ed, action);
+      if (out.message) showToast(out.message);
+      ed.focus();
+    }
+
+    function runSplitCell() {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'splitCell', rows: splitRows.value, cols: splitCols.value });
+      showToast(
+        res.ok
+          ? `已拆分为 ${splitRows.value} 行 × ${splitCols.value} 列`
+          : res.reason || '当前单元格无法拆分'
+      );
+      ed.focus();
+    }
+
+    function runTableVerticalAlign(alignment: 'top' | 'center' | 'bottom') {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'setTableCellVerticalAlignment', alignment });
+      const label = alignment === 'top' ? '顶对齐' : alignment === 'center' ? '垂直居中' : '底对齐';
+      showToast(res.ok ? `已设单元格${label}` : res.reason || '当前无法设置单元格对齐');
+      ed.focus();
+    }
+
+    function runTableCellFill(hex: string | null, label: string) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({
+        type: 'setCellFill',
+        color: hex ? { kind: 'hex', value: hex } : null,
+      });
+      showToast(
+        res.ok
+          ? hex
+            ? `已设单元格底纹：${label}`
+            : '已清除单元格底纹'
+          : res.reason || '无法设置单元格底纹'
+      );
+      ed.focus();
+    }
+
+    function runWholeTableBorder(scope: 'threeLine' | 'tableAll' | 'tableNone') {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'setTableBorders', scope });
+      const label =
+        scope === 'threeLine' ? '公文三线表' : scope === 'tableAll' ? '整表全框线' : '整表无框线';
+      showToast(res.ok ? `已应用${label}` : res.reason || '当前表格无法应用框线样式');
+      ed.focus();
+    }
+
+    function runHfAction(action: HeaderFooterQuickAction) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const out = runHeaderFooterQuickAction(ed, action, localTitlePage.value);
+      if (out.titlePage !== undefined) localTitlePage.value = out.titlePage;
+      showToast(out.message);
+      ed.focus();
+    }
+
+    function applyWatermark(watermark: Watermark | null, label: string) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'setWatermark', watermark });
       if (!res.ok) {
-        showToast(res.reason || '当前表格位置无法执行此操作');
-      } else if (action === 'toggleHeaderRow') {
-        const nextHeaders = ed.snapshot().table?.headerRowCount ?? 0;
-        showToast(
-          nextHeaders === 0
-            ? '已取消重复表头行'
-            : nextHeaders === 1
-              ? '已开启首行重复表头'
-              : `已设前 ${nextHeaders} 行为重复表头`
-        );
-      } else if (action === 'mergeCells') {
-        showToast('已合并选中单元格');
+        showToast(res.reason || '当前文档无法设置水印');
+      } else {
+        watermarkState.value = watermark
+          ? { has: true, text: watermark.text ?? '' }
+          : { has: false, text: '' };
+        showToast(watermark ? `已设置水印：${label}` : '已清除水印');
       }
       ed.focus();
+    }
+
+    function applyCustomWatermark() {
+      const built = buildCustomWatermark({
+        text: customWmText.value,
+        layout: customWmLayout.value,
+        color: customWmColor.value,
+      });
+      if (!built.ok) {
+        showToast(built.error);
+        return;
+      }
+      applyWatermark(built.watermark, built.watermark.text ?? '自定义水印');
     }
 
     function insertTable(rows: number, cols: number) {
@@ -487,6 +541,19 @@ export const WpsQuickBar = defineComponent({
       ed.focus();
     }
 
+    function insertExtraObject(kind: 'footnote' | 'endnote' | 'textBox') {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res =
+        kind === 'textBox'
+          ? ed.exec({ type: 'insertTextBox' })
+          : ed.exec({ type: 'insertNote', noteKind: kind });
+      const label = kind === 'footnote' ? '脚注' : kind === 'endnote' ? '尾注' : '文本框';
+      showToast(res.ok ? `已插入${label}` : res.reason || `当前位置无法插入${label}`);
+      ed.focus();
+    }
+
     async function handleImagePicked(e: Event) {
       const input = e.target as HTMLInputElement;
       const file = input.files?.[0];
@@ -500,56 +567,8 @@ export const WpsQuickBar = defineComponent({
       }
       imageInsertBusy.value = true;
       try {
-        const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        const limits = DEFAULT_IMAGE_RESOURCE_LIMITS;
-        if (bytes.byteLength === 0) {
-          showToast('图片文件为空');
-          return;
-        }
-        if (bytes.byteLength > limits.maxEncodedBytes) {
-          showToast('图片体积超出限制');
-          return;
-        }
-        const sniffed = sniffImageBytesMime(bytes);
-        if (!isSupportedRasterMime(sniffed)) {
-          showToast('仅支持 PNG / JPG / GIF 图片');
-          return;
-        }
-        const header = validateRasterHeader(bytes, sniffed);
-        if (!header) {
-          showToast('图片文件头无效或已损坏');
-          return;
-        }
-        if (
-          header.pixelWidth * header.pixelHeight > limits.maxPixels ||
-          header.pixelWidth > limits.maxDimension ||
-          header.pixelHeight > limits.maxDimension
-        ) {
-          showToast('图片分辨率超出限制');
-          return;
-        }
-        const dpiX = header.dpiX ?? 96;
-        const dpiY = header.dpiY ?? 96;
-        const widthPoints = Math.max(1, Math.round(((header.pixelWidth * 72) / dpiX) * 100) / 100);
-        const heightPoints = Math.max(
-          1,
-          Math.round(((header.pixelHeight * 72) / dpiY) * 100) / 100
-        );
-        const res = await ed.executeImageCommand({
-          type: 'insertImage',
-          data: bytes,
-          mime: sniffed,
-          widthPoints,
-          heightPoints,
-        });
-        if (!res.ok) {
-          showToast(`插入图片失败：${res.reason || '当前位置不支持'}`);
-        } else {
-          showToast('已插入图片');
-        }
-      } catch {
-        showToast('读取图片失败');
+        const out = await insertRasterImageFromFile(ed, file);
+        showToast(out.message);
       } finally {
         imageInsertBusy.value = false;
       }
@@ -620,28 +639,7 @@ export const WpsQuickBar = defineComponent({
                         onClick: () => togglePopover('paste'),
                       }),
                       openPopover.value === 'paste'
-                        ? h('div', { class: 'weboffice-qbar__menu' }, [
-                            h(
-                              'button',
-                              {
-                                type: 'button',
-                                class: 'weboffice-qbar__menu-item',
-                                onMousedown: keepFocus,
-                                onClick: () => void runPaste(false),
-                              },
-                              '粘贴 (Ctrl+V)'
-                            ),
-                            h(
-                              'button',
-                              {
-                                type: 'button',
-                                class: 'weboffice-qbar__menu-item',
-                                onMousedown: keepFocus,
-                                onClick: () => void runPaste(true),
-                              },
-                              '仅保留文本 (Ctrl+Shift+V)'
-                            ),
-                          ])
+                        ? renderPasteMenu((plain) => void runPaste(plain))
                         : null,
                     ]),
                     qBtn({
@@ -656,6 +654,38 @@ export const WpsQuickBar = defineComponent({
                       testId: 'qbar-cut',
                       disabled: isDisabled.value,
                       onClick: () => void runCopyOrCut('cut'),
+                    }),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: [
+                          'weboffice-qbar__btn',
+                          formatPainterCmd.isActive.value ? 'is-active' : '',
+                          formatPainterCmd.value.value === 'locked' ? 'is-locked' : '',
+                        ],
+                        'data-testid': 'qbar-format-painter',
+                        'data-painter-mode': String(formatPainterCmd.value.value ?? 'off'),
+                        'aria-pressed': String(formatPainterCmd.isActive.value),
+                        title:
+                          formatPainterCmd.value.value === 'locked'
+                            ? '格式刷已锁定（连续刷格式，按 Esc 或再次点击退出）'
+                            : '格式刷（单击刷一次，双击连续刷）',
+                        disabled: !formatPainterCmd.isEnabled.value,
+                        onMousedown: keepFocus,
+                        onClick: () => formatPainterCmd.execute(),
+                      },
+                      formatPainterCmd.value.value === 'locked' ? '格式刷🔒' : '格式刷'
+                    ),
+                    qBtn({
+                      label: '清格式',
+                      title: '清除选中文字与段落的直接格式',
+                      testId: 'qbar-clear-format',
+                      disabled: !clearFormatCmd.isEnabled.value,
+                      onClick: () => {
+                        clearFormatCmd.execute();
+                        showToast('已清除直接格式');
+                      },
                     }),
                   ]),
                   h('span', { class: 'weboffice-qbar__sep' }),
@@ -717,41 +747,17 @@ export const WpsQuickBar = defineComponent({
                         onClick: () => togglePopover('lineSpacing'),
                       }),
                       openPopover.value === 'lineSpacing'
-                        ? h('div', { class: 'weboffice-qbar__menu' }, [
-                            ...LINE_SPACING_PRESETS.map((preset) =>
-                              h(
-                                'button',
-                                {
-                                  key: preset.testId,
-                                  type: 'button',
-                                  class: 'weboffice-qbar__menu-item',
-                                  'data-testid': preset.testId,
-                                  onMousedown: keepFocus,
-                                  onClick: () => applyLineSpacingPreset(preset.rule, preset.value),
-                                },
-                                preset.label
-                              )
-                            ),
-                            h('div', { class: 'weboffice-qbar__menu-sep' }),
-                            h(
-                              'button',
-                              {
-                                type: 'button',
-                                class: 'weboffice-qbar__menu-item',
-                                'data-testid': 'qbar-open-para-dialog',
-                                onMousedown: keepFocus,
-                                onClick: () => {
-                                  openPopover.value = 'none';
-                                  props.onOpenOfficialDialog('paragraph');
-                                },
-                              },
-                              '段落排版设置（厘米 / 字符）…'
-                            ),
-                          ])
+                        ? renderLineSpacingMenu({
+                            onApply: applyLineSpacingPreset,
+                            onOpenDialog: () => {
+                              openPopover.value = 'none';
+                              props.onOpenOfficialDialog('paragraph');
+                            },
+                          })
                         : null,
                     ]),
                     qBtn({
-                      label: '首行2字',
+                      label: '首行',
                       title: '一键切换当前段落首行缩进 2 字符',
                       testId: 'qbar-first-line-2char',
                       active: hasFirstLineIndent.value,
@@ -809,8 +815,9 @@ export const WpsQuickBar = defineComponent({
                         : null,
                     ]),
                     qBtn({
-                      label: '页面(cm)',
-                      title: '页面设置与分栏（厘米 / GB/T 9704 公文标准页边距 / 多栏）',
+                      label: '页面',
+                      title:
+                        '页面设置与分栏（厘米 / GB/T 9704 公文标准页边距 / 多栏 / 页眉页脚边距）',
                       testId: 'qbar-page-setup-cm',
                       disabled: isDisabled.value,
                       onClick: () => {
@@ -818,6 +825,41 @@ export const WpsQuickBar = defineComponent({
                         props.onOpenOfficialDialog('page');
                       },
                     }),
+                    h('div', { class: 'weboffice-qbar__dropdown' }, [
+                      qBtn({
+                        label: hfState.value?.editing ? '页眉✦▾' : '页眉 ▾',
+                        title: '页眉/页脚、公文页码（— 1 —）与公文水印',
+                        testId: 'qbar-page-extras',
+                        active:
+                          openPopover.value === 'pageExtras' || Boolean(hfState.value?.editing),
+                        disabled: isDisabled.value,
+                        onClick: () => togglePopover('pageExtras'),
+                      }),
+                      openPopover.value === 'pageExtras'
+                        ? renderPageExtrasMenu({
+                            editingRegion: hfState.value?.editing ?? null,
+                            titlePage: hfState.value?.titlePage ?? localTitlePage.value,
+                            hasWatermark: watermarkState.value.has,
+                            currentWatermarkText: watermarkState.value.text,
+                            customWmText: customWmText.value,
+                            customWmLayout: customWmLayout.value,
+                            customWmColor: customWmColor.value,
+                            onUpdateCustomText: (v) => {
+                              customWmText.value = v;
+                            },
+                            onUpdateCustomLayout: (v) => {
+                              customWmLayout.value = v;
+                            },
+                            onUpdateCustomColor: (v) => {
+                              customWmColor.value = v;
+                            },
+                            onHeaderFooterAction: runHfAction,
+                            onApplyWatermarkPreset: applyWatermark,
+                            onApplyCustomWatermark: applyCustomWatermark,
+                            onClearWatermark: () => applyWatermark(null, ''),
+                          })
+                        : null,
+                    ]),
                   ]),
                   h('span', { class: 'weboffice-qbar__sep' }),
 
@@ -844,38 +886,31 @@ export const WpsQuickBar = defineComponent({
                                   isHeaderRow: isTableHeaderRow.value,
                                   headerRowCount: tableHeaderRowCount.value,
                                   onAction: runTableContextAction,
+                                  advancedSlot: renderTableAdvancedSection({
+                                    splitLimits: splitLimits.value,
+                                    splitRows: splitRows.value,
+                                    splitCols: splitCols.value,
+                                    onUpdateSplitRows: (n) => {
+                                      splitRows.value = n;
+                                    },
+                                    onUpdateSplitCols: (n) => {
+                                      splitCols.value = n;
+                                    },
+                                    onSplitCell: runSplitCell,
+                                    onVerticalAlign: runTableVerticalAlign,
+                                    onCellFill: runTableCellFill,
+                                    onWholeTableBorder: runWholeTableBorder,
+                                  }),
                                 })
                               : null,
                             tableInsertCmd.isEnabled.value
-                              ? h('div', null, [
-                                  h(
-                                    'div',
-                                    { class: 'weboffice-qbar__table-label' },
-                                    `插入 ${tableHover.value.rows} × ${tableHover.value.cols} 表格`
-                                  ),
-                                  h(
-                                    'div',
-                                    { class: 'weboffice-qbar__grid-cells' },
-                                    Array.from({ length: 6 * 8 }, (_, idx) => {
-                                      const r = Math.floor(idx / 8) + 1;
-                                      const c = (idx % 8) + 1;
-                                      const active =
-                                        r <= tableHover.value.rows && c <= tableHover.value.cols;
-                                      return h('button', {
-                                        key: `${r}x${c}`,
-                                        type: 'button',
-                                        class: ['weboffice-qbar__grid-cell', active ? 'is-on' : ''],
-                                        'data-testid': `table-cell-${r}x${c}`,
-                                        'aria-label': `${r} 行 ${c} 列`,
-                                        onMousedown: keepFocus,
-                                        onMouseenter: () => {
-                                          tableHover.value = { rows: r, cols: c };
-                                        },
-                                        onClick: () => insertTable(r, c),
-                                      });
-                                    })
-                                  ),
-                                ])
+                              ? renderTableInsertGrid({
+                                  hover: tableHover.value,
+                                  onHover: (rows, cols) => {
+                                    tableHover.value = { rows, cols };
+                                  },
+                                  onInsert: insertTable,
+                                })
                               : null,
                           ])
                         : null,
@@ -900,60 +935,21 @@ export const WpsQuickBar = defineComponent({
                     h('div', { class: 'weboffice-qbar__dropdown' }, [
                       qBtn({
                         label: '符号 ▾',
-                        title: '插入分页符、分节符与公文常用符号',
+                        title: '插入分页符、分节符、脚注/尾注/文本框与公文常用符号',
                         testId: 'qbar-symbols',
                         active: openPopover.value === 'symbols',
                         disabled: isDisabled.value,
                         onClick: () => togglePopover('symbols'),
                       }),
                       openPopover.value === 'symbols'
-                        ? h('div', { class: 'weboffice-qbar__symbols-wrap' }, [
-                            h('div', { class: 'weboffice-qbar__section-title' }, '分隔符'),
-                            h('div', { class: 'weboffice-qbar__breaks-row' }, [
-                              h(
-                                'button',
-                                {
-                                  type: 'button',
-                                  class: 'weboffice-qbar__chip-btn',
-                                  'data-testid': 'qbar-insert-page-break',
-                                  onMousedown: keepFocus,
-                                  onClick: () => insertBreakKind('page'),
-                                },
-                                '插入分页符'
-                              ),
-                              h(
-                                'button',
-                                {
-                                  type: 'button',
-                                  class: 'weboffice-qbar__chip-btn',
-                                  'data-testid': 'qbar-insert-section-break',
-                                  onMousedown: keepFocus,
-                                  onClick: () => insertBreakKind('section'),
-                                },
-                                '插入分节符'
-                              ),
-                            ]),
-                            h('div', { class: 'weboffice-qbar__menu-sep' }),
-                            h('div', { class: 'weboffice-qbar__section-title' }, '公文常用符号'),
-                            h(
-                              'div',
-                              { class: 'weboffice-qbar__symbols-grid' },
-                              CN_OFFICIAL_SYMBOLS.map((sym) =>
-                                h(
-                                  'button',
-                                  {
-                                    key: sym.char,
-                                    type: 'button',
-                                    class: 'weboffice-qbar__symbol-btn',
-                                    title: sym.label,
-                                    onMousedown: keepFocus,
-                                    onClick: () => insertSymbol(sym.char),
-                                  },
-                                  sym.char
-                                )
-                              )
-                            ),
-                          ])
+                        ? renderSymbolsMenu({
+                            footnoteEnabled: footnoteCmd.isEnabled.value,
+                            endnoteEnabled: endnoteCmd.isEnabled.value,
+                            textBoxEnabled: textBoxCmd.isEnabled.value,
+                            onInsertBreak: insertBreakKind,
+                            onInsertExtra: insertExtraObject,
+                            onInsertSymbol: insertSymbol,
+                          })
                         : null,
                     ]),
                   ]),
@@ -962,7 +958,7 @@ export const WpsQuickBar = defineComponent({
                   // 5. 查找替换
                   h('div', { class: 'weboffice-qbar__group' }, [
                     qBtn({
-                      label: '查找替换',
+                      label: '查找',
                       title: '查找与替换 (Ctrl+H / Cmd+Option+F)',
                       testId: 'weboffice-open-find-replace',
                       active: props.findReplaceOpen,

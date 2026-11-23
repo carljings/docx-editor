@@ -12,7 +12,7 @@ import {
 
 const keepFocus = (e: MouseEvent) => e.preventDefault();
 
-/** Clamp an open quick-bar popover horizontally inside the host & viewport bounds. */
+/** Clamp an open quick-bar popover horizontally and flip vertically if needed without covering its trigger. */
 export function clampPopoverWithinViewport(
   bar: HTMLElement | null,
   host: HTMLElement | null
@@ -23,7 +23,13 @@ export function clampPopoverWithinViewport(
   );
   if (!pop) return;
   pop.style.transform = '';
+  pop.style.top = '';
+  pop.style.bottom = '';
+  pop.style.maxHeight = '';
+  pop.style.overflowY = '';
+
   const rect = pop.getBoundingClientRect();
+  const triggerRect = pop.parentElement?.getBoundingClientRect();
   const hostRect = host?.getBoundingClientRect();
   const minLeft = Math.max(8, hostRect ? Math.ceil(hostRect.left) + 8 : 8);
   const maxRight = Math.min(
@@ -34,6 +40,23 @@ export function clampPopoverWithinViewport(
   if (rect.right > maxRight) dx -= rect.right - maxRight;
   if (rect.left + dx < minLeft) dx += minLeft - (rect.left + dx);
   if (Math.abs(dx) > 0.5) pop.style.transform = `translateX(${Math.round(dx)}px)`;
+
+  const maxBottom = window.innerHeight - 8;
+  if (rect.bottom > maxBottom && triggerRect) {
+    const spaceBelow = Math.max(0, maxBottom - triggerRect.bottom - 4);
+    const spaceAbove = Math.max(0, triggerRect.top - 12);
+    if (spaceAbove > spaceBelow) {
+      pop.style.top = 'auto';
+      pop.style.bottom = 'calc(100% + 4px)';
+      if (rect.height > spaceAbove) {
+        pop.style.maxHeight = `${Math.max(120, Math.floor(spaceAbove))}px`;
+        pop.style.overflowY = 'auto';
+      }
+    } else {
+      pop.style.maxHeight = `${Math.max(120, Math.floor(spaceBelow))}px`;
+      pop.style.overflowY = 'auto';
+    }
+  }
 }
 
 export function renderNumberingMenu(
@@ -222,27 +245,20 @@ export function renderTextEffectsMenu(opts: {
   ]);
 }
 
+import type { TableContextQuickAction } from './qbar-p2-actions';
+
 export function renderTableContextSection(opts: {
   canMerge: boolean;
   canToggleHeaderRow: boolean;
   isHeaderRow: boolean;
   headerRowCount: number;
-  onAction: (
-    action:
-      | 'mergeCells'
-      | 'toggleHeaderRow'
-      | 'rowAbove'
-      | 'rowBelow'
-      | 'colLeft'
-      | 'colRight'
-      | 'deleteRow'
-      | 'deleteTable'
-  ) => void;
+  onAction: (action: TableContextQuickAction) => void;
+  advancedSlot?: VNode | null;
 }): VNode {
   const btn = (
     label: string,
     testId: string,
-    action: Parameters<typeof opts.onAction>[0],
+    action: TableContextQuickAction,
     extra: {
       disabled?: boolean;
       active?: boolean;
@@ -295,13 +311,16 @@ export function renderTableContextSection(opts: {
         headerRows: opts.headerRowCount,
         title: headerTitle,
       }),
+      btn('选中整表', 'table-ctx-select-all', 'selectTable'),
       btn('上方插行', 'table-ctx-row-above', 'rowAbove'),
       btn('下方插行', 'table-ctx-row-below', 'rowBelow'),
       btn('左侧插列', 'table-ctx-col-left', 'colLeft'),
       btn('右侧插列', 'table-ctx-col-right', 'colRight'),
       btn('删除当前行', 'table-ctx-del-row', 'deleteRow', { danger: true }),
+      btn('删除当前列', 'table-ctx-del-col', 'deleteColumn', { danger: true }),
       btn('删除表格', 'table-ctx-del-table', 'deleteTable', { danger: true }),
     ]),
+    opts.advancedSlot ?? null,
     h('div', { class: 'weboffice-qbar__menu-sep' }),
   ]);
 }
