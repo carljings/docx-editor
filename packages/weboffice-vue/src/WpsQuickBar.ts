@@ -74,6 +74,8 @@ const selectTableHeaderCount = (snapshot: EditorSnapshot): number =>
   snapshot.table?.headerRowCount ?? 0;
 const selectIsTableHeaderRow = (snapshot: EditorSnapshot): boolean =>
   Boolean(snapshot.table?.isHeaderRow);
+const selectCanToggleHeaderRow = (snapshot: EditorSnapshot): boolean =>
+  snapshot.table !== null && snapshot.table.rowIndex <= (snapshot.table.headerRowCount ?? 0);
 
 /**
  * WPS 风格公文快捷增强工具栏（挂载于主工具栏下方，补齐 WPS 顶部栏高频 P0 + P1 能力）：
@@ -131,6 +133,8 @@ export const WpsQuickBar = defineComponent({
     const tableHeaderRowCount = useEditorState(selectTableHeaderCount);
     // oxlint-disable-next-line react/rules-of-hooks
     const isTableHeaderRow = useEditorState(selectIsTableHeaderRow);
+    // oxlint-disable-next-line react/rules-of-hooks
+    const canToggleHeaderRow = useEditorState(selectCanToggleHeaderRow);
 
     const anchorRef = ref<HTMLElement | null>(null);
     const chromeBandEl = shallowRef<HTMLElement | null>(null);
@@ -836,6 +840,7 @@ export const WpsQuickBar = defineComponent({
                             inTable.value
                               ? renderTableContextSection({
                                   canMerge: tableMergeCmd.isEnabled.value,
+                                  canToggleHeaderRow: canToggleHeaderRow.value,
                                   isHeaderRow: isTableHeaderRow.value,
                                   headerRowCount: tableHeaderRowCount.value,
                                   onAction: runTableContextAction,

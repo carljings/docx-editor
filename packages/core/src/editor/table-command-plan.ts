@@ -804,7 +804,7 @@ export function planTableCommand(input: TableCommandPlannerInput): TableCommandP
       const op = toggleHeaderRowOp(part, anchor.tableId, anchor.rowId);
       return op
         ? planValidated(part, [op], { kind: 'preserveSelection' })
-        : refusal('unsupported', 'cannot toggle header row');
+        : refusal('unsupported', 'repeating header rows apply only to row 1 or contiguous rows');
     }
     case 'mergeCells':
     case 'splitCell': {

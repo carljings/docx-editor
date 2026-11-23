@@ -364,11 +364,14 @@ describe('P1 paragraph borders, shading, underline variants, character spacing, 
           '<w:tc><w:p><w:r><w:t>数据2</w:t></w:r></w:p></w:tc></w:tr>' +
           '<w:tr><w:tc><w:p><w:r><w:t>第三行</w:t></w:r></w:p></w:tc>' +
           '<w:tc><w:p><w:r><w:t>数据3</w:t></w:r></w:p></w:tc></w:tr>' +
+          '<w:tr><w:tc><w:p><w:r><w:t>第四行</w:t></w:r></w:p></w:tc>' +
+          '<w:tc><w:p><w:r><w:t>数据4</w:t></w:r></w:p></w:tc></w:tr>' +
           '</w:tbl>'
       )
     );
     selectPara(surface, 0, 0, 0);
     expect(editor.snapshot().table?.headerRowCount).toBeUndefined();
+    expect(editor.can({ type: 'toggleHeaderRow' }).ok).toBe(true);
     expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
     let xml = serializeOoxmlPart(surface.session.part());
     expect(xml).toContain('<w:cantSplit/>');
@@ -376,14 +379,33 @@ describe('P1 paragraph borders, shading, underline variants, character spacing, 
     expect(editor.snapshot().table?.headerRowCount).toBe(1);
     expect(editor.snapshot().table?.isHeaderRow).toBe(true);
 
-    // Move caret to row 1 and extend repeating header to [1, 2]
+    // Move caret to row 2 (index 1) and extend repeating header to [1, 2]
     selectPara(surface, 2, 0, 0);
     expect(editor.snapshot().table?.isHeaderRow).toBe(false);
+    expect(editor.can({ type: 'toggleHeaderRow' }).ok).toBe(true);
     expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
     expect(editor.snapshot().table?.headerRowCount).toBe(2);
     expect(editor.snapshot().table?.isHeaderRow).toBe(true);
 
-    // Move caret back to row 0: off ([1, 2] -> []) then on again ([] -> [1]), preserving cantSplit
+    // Move caret to non-adjacent row 4 (index 3): MUST refuse and preserve [1, 2] intact
+    selectPara(surface, 6, 0, 0);
+    expect(editor.snapshot().table?.isHeaderRow).toBe(false);
+    expect(editor.snapshot().table?.headerRowCount).toBe(2);
+    expect(editor.can({ type: 'toggleHeaderRow' }).ok).toBe(false);
+    expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(false);
+    expect(editor.snapshot().table?.headerRowCount).toBe(2);
+    expect((serializeOoxmlPart(surface.session.part()).match(/<w:tblHeader\b/g) ?? []).length).toBe(
+      2
+    );
+
+    // Move caret back to row 2 (index 1): trim 2 -> 1 and re-extend 1 -> 2
+    selectPara(surface, 2, 0, 0);
+    expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
+    expect(editor.snapshot().table?.headerRowCount).toBe(1);
+    expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
+    expect(editor.snapshot().table?.headerRowCount).toBe(2);
+
+    // Move caret back to row 1 (index 0): off ([1, 2] -> []) then on again ([] -> [1]), preserving cantSplit
     selectPara(surface, 0, 0, 0);
     expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
     xml = serializeOoxmlPart(surface.session.part());
@@ -391,6 +413,12 @@ describe('P1 paragraph borders, shading, underline variants, character spacing, 
     expect(xml).toContain('<w:cantSplit/>');
     expect(editor.snapshot().table?.headerRowCount).toBeUndefined();
 
+    // When 0 headers exist, non-first row 2 (index 1) must also refuse
+    selectPara(surface, 2, 0, 0);
+    expect(editor.can({ type: 'toggleHeaderRow' }).ok).toBe(false);
+    expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(false);
+
+    selectPara(surface, 0, 0, 0);
     expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
     xml = serializeOoxmlPart(surface.session.part());
     expect(xml).toContain('<w:tblHeader w:val="1"/>');

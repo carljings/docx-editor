@@ -224,6 +224,7 @@ export function renderTextEffectsMenu(opts: {
 
 export function renderTableContextSection(opts: {
   canMerge: boolean;
+  canToggleHeaderRow: boolean;
   isHeaderRow: boolean;
   headerRowCount: number;
   onAction: (
@@ -271,16 +272,24 @@ export function renderTableContextSection(opts: {
       label
     );
 
-  const headerTitle =
-    opts.headerRowCount > 0
-      ? `当前前 ${opts.headerRowCount} 行为重复表头行，点击切换`
-      : '开启首行跨页重复表头';
+  const headerTitle = !opts.canToggleHeaderRow
+    ? opts.headerRowCount > 0
+      ? `当前前 ${opts.headerRowCount} 行为重复表头行；仅可在首行或紧邻表头的连续行切换`
+      : '仅可在表格首行开启跨页重复表头'
+    : opts.isHeaderRow
+      ? opts.headerRowCount > 1
+        ? `当前前 ${opts.headerRowCount} 行为重复表头行，点击取消当前行及后续表头`
+        : '当前为重复表头行，点击取消'
+      : opts.headerRowCount > 0
+        ? `点击将当前行纳入重复表头（前 ${opts.headerRowCount + 1} 行）`
+        : '开启首行跨页重复表头';
 
   return h('div', { class: 'weboffice-qbar__table-ctx', 'data-testid': 'table-ctx-actions' }, [
     h('div', { class: 'weboffice-qbar__section-title' }, '当前表格操作'),
     h('div', { class: 'weboffice-qbar__table-ctx-grid' }, [
       btn('合并单元格', 'table-ctx-merge', 'mergeCells', { disabled: !opts.canMerge }),
       btn('重复表头行', 'table-ctx-header-row', 'toggleHeaderRow', {
+        disabled: !opts.canToggleHeaderRow,
         active: opts.isHeaderRow,
         pressed: opts.isHeaderRow,
         headerRows: opts.headerRowCount,

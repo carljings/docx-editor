@@ -122,7 +122,13 @@ export function tableHeaderRowCount(part: OoxmlPart, tableId: string): number {
   return count;
 }
 
-/** Build a `setTableProperties` op toggling repeating header row(s) on, extending, or off. */
+/**
+ * Build a `setTableProperties` op toggling repeating header row(s) for the caret's row.
+ *
+ * OOXML `w:tblHeader` applies only to a contiguous prefix starting at row 0 (§17.4.50).
+ * Non-adjacent body rows (`rowIndex > current`) return `null` so an off-state click on a
+ * body row never wipes out existing header rows.
+ */
 export function toggleHeaderRowOp(
   part: OoxmlPart,
   tableId: string,
@@ -131,18 +137,16 @@ export function toggleHeaderRowOp(
   const topology = readEditableTableTopology(part.root, tableId);
   if (!topology.ok || topology.topology.rows.length === 0) return null;
   const rows = topology.topology.rows;
-  const matchedIdx = rowId ? rows.findIndex((entry) => entry.row.id === rowId) : 0;
-  const rowIndex = matchedIdx >= 0 ? matchedIdx : 0;
+  const rowIndex = rowId ? rows.findIndex((entry) => entry.row.id === rowId) : 0;
+  if (rowIndex < 0) return null;
   const current = tableHeaderRowCount(part, tableId);
   let nextHeaderRowCount: number;
-  if (current === 0) {
-    nextHeaderRowCount = 1;
+  if (rowIndex < current) {
+    nextHeaderRowCount = rowIndex;
   } else if (rowIndex === current && current < rows.length) {
     nextHeaderRowCount = current + 1;
-  } else if (rowIndex > 0 && rowIndex === current - 1) {
-    nextHeaderRowCount = current - 1;
   } else {
-    nextHeaderRowCount = 0;
+    return null;
   }
   return {
     op: 'setTableProperties',
