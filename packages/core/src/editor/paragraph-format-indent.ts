@@ -192,13 +192,17 @@ export function wholeTableBorderPresetOps(
   const allCellIds = [...new Set(rows.flatMap((row) => row.cells.map((cell) => cell.id)))];
   if (allCellIds.length === 0) return null;
 
+  const clearTblBorders: TreeDocOp = { op: 'setTableProperties', tableId, borders: 'none' };
+
   if (preset === 'tableNone') {
     return [
+      clearTblBorders,
       { op: 'setTableCellBorders', tableId, cellIds: allCellIds, scope: 'none', target: 'all' },
     ];
   }
   if (preset === 'tableAll') {
     return [
+      clearTblBorders,
       {
         op: 'setTableCellBorders',
         tableId,
@@ -216,6 +220,7 @@ export function wholeTableBorderPresetOps(
     color: thick.color,
   };
   const ops: TreeDocOp[] = [
+    clearTblBorders,
     { op: 'setTableCellBorders', tableId, cellIds: allCellIds, scope: 'none', target: 'all' },
     { op: 'setTableCellBorders', tableId, cellIds: allCellIds, scope: 'top', spec: thick },
     { op: 'setTableCellBorders', tableId, cellIds: allCellIds, scope: 'bottom', spec: thick },

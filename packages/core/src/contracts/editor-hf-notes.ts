@@ -34,6 +34,24 @@ export interface HeaderFooterState {
   readonly footerDistanceTwips?: number;
 }
 
+/** Current caret section's header/footer options, readable from body or furniture scope. */
+export interface SectionFurnitureState {
+  readonly sectionIndex: number;
+  readonly sectionCount: number;
+  readonly titlePage: boolean;
+  readonly evenAndOddHeaders: boolean;
+  readonly headerDistanceTwips: number;
+  readonly footerDistanceTwips: number;
+}
+
+export interface EditorHeaderFooterQueries {
+  sectionFurniture: Record<never, never>;
+}
+
+export interface EditorHeaderFooterQueryResults {
+  sectionFurniture: SectionFurnitureState | null;
+}
+
 /** Footnote vs endnote — the public Editor vocabulary. */
 export type NoteKind = 'footnote' | 'endnote';
 
@@ -137,6 +155,7 @@ export interface EditorHeaderFooterCommands {
    */
   setHeaderFooterOptions: {
     sectionIndex?: number;
+    scope?: 'section' | 'document';
     titlePage?: boolean;
     evenAndOddHeaders?: boolean;
     headerDistanceTwips?: number;

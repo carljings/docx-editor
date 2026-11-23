@@ -3,11 +3,53 @@
 // Resolves section/variant slots, maps EditorCommands onto package lifecycle TreeDocOps,
 // and handles active-scope rebind after unlink / exit after delete-or-link of the open story.
 
-import type { EditorCommand, ExecResult } from '../contracts/editor.ts';
+import type { EditorCommand, ExecResult, SectionFurnitureState } from '../contracts/editor.ts';
 import type { TreeDocOp } from '@docx-editor.dev/core/store';
+import { layoutProjectionOf } from '../layout/revision-projection.ts';
+import { projectedSectionSourceIndexes } from '../layout/section-properties.ts';
 import type { PaginatedSurface } from './paginated-surface-contract.ts';
+import { sectionIndexForCaret } from './section-scope.ts';
+import { storyScopeOfNodeId } from './surface-scope.ts';
 
 export type FurnitureVariant = 'default' | 'first' | 'even';
+
+/** Resolve the source `sectPr` index of the current caret (body, header/footer, or note). */
+export function caretSectionIndex(mounted: PaginatedSurface): number {
+  const open = mounted.headerFooterState();
+  const displayMode = layoutProjectionOf(mounted.revisionDisplayMode());
+  const paragraphId = mounted.state().selection.head.paragraphId;
+  const scope =
+    mounted.activeScope().kind === 'headerFooter'
+      ? { kind: 'headerFooter' as const, rId: open?.rId ?? '' }
+      : storyScopeOfNodeId(mounted.session, paragraphId, { kind: 'body' });
+  const projected = sectionIndexForCaret(
+    mounted.session,
+    paragraphId,
+    scope,
+    open?.sectionIndex,
+    displayMode
+  );
+  const sourceIndexes = projectedSectionSourceIndexes(mounted.session.part(), displayMode);
+  return sourceIndexes[projected] ?? projected;
+}
+
+/** Read current section's header/footer options & distances from body or furniture scope. */
+export function sectionFurnitureOf(surface: PaginatedSurface | null): SectionFurnitureState | null {
+  if (!surface) return null;
+  const sectionIndex = caretSectionIndex(surface);
+  const bySection = surface.session.headerFooterResolutionBySection();
+  const section = bySection[sectionIndex] ?? bySection[0];
+  const paragraphId = surface.state().selection.head.paragraphId;
+  const margins = surface.sectionPropertiesAt(paragraphId).margins;
+  return {
+    sectionIndex,
+    sectionCount: Math.max(1, bySection.length),
+    titlePage: Boolean(section?.titlePage),
+    evenAndOddHeaders: Boolean(section?.evenAndOddHeaders),
+    headerDistanceTwips: margins.headerTwips,
+    footerDistanceTwips: margins.footerTwips,
+  };
+}
 
 export function variantFromFlags(flags: {
   readonly firstPage?: boolean;
@@ -75,7 +117,7 @@ export function slotArgsFromCommand(
     return { ok: false, refusal: { ok: false, code: 'invalidArgs', reason: resolved.reason } };
   }
   const variant = resolved as FurnitureVariant;
-  const sectionIndex = command.sectionIndex ?? state?.sectionIndex ?? 0;
+  const sectionIndex = command.sectionIndex ?? caretSectionIndex(mounted);
   if (!Number.isInteger(sectionIndex) || sectionIndex < 0) {
     return {
       ok: false,
@@ -161,7 +203,7 @@ export function execEditHeaderFooter(
   if (typeof mounted.enterHeaderFooter !== 'function') {
     return { ok: false, code: 'unsupported', reason: 'header/footer editing is not available' };
   }
-  const sectionIndex = command.sectionIndex ?? 0;
+  const sectionIndex = command.sectionIndex ?? caretSectionIndex(mounted);
   if (!Number.isInteger(sectionIndex) || sectionIndex < 0) {
     return {
       ok: false,
@@ -309,15 +351,38 @@ export function execUnlinkHeaderFooter(
   return result;
 }
 
+export function headerFooterOptionsSupport(
+  command: Extract<EditorCommand, { type: 'setHeaderFooterOptions' }>
+):
+  | { readonly supported: true; readonly mutating: boolean }
+  | { readonly supported: false; readonly reason: string } {
+  if (command.scope !== undefined && command.scope !== 'section' && command.scope !== 'document') {
+    return {
+      supported: false,
+      reason: "setHeaderFooterOptions scope must be 'section' or 'document'",
+    };
+  }
+  const empty =
+    command.titlePage === undefined &&
+    command.evenAndOddHeaders === undefined &&
+    command.headerDistanceTwips === undefined &&
+    command.footerDistanceTwips === undefined;
+  return empty
+    ? { supported: false, reason: 'setHeaderFooterOptions requires at least one option' }
+    : { supported: true, mutating: true };
+}
+
 export function execSetHeaderFooterOptions(
   mounted: PaginatedSurface,
   command: Extract<EditorCommand, { type: 'setHeaderFooterOptions' }>
 ): ExecResult {
-  const state = mounted.headerFooterState();
-  const sectionIndex = command.sectionIndex ?? state?.sectionIndex ?? 0;
+  const allSections = command.scope === 'document' && command.sectionIndex === undefined;
+  const sectionIndex = allSections
+    ? undefined
+    : (command.sectionIndex ?? caretSectionIndex(mounted));
   return applyLifecycle(mounted, {
     op: 'setSectionFurnitureOptions',
-    sectionIndex,
+    ...(allSections ? { allSections: true } : { sectionIndex }),
     ...(command.titlePage !== undefined ? { titlePage: command.titlePage } : {}),
     ...(command.evenAndOddHeaders !== undefined
       ? { evenAndOddHeaders: command.evenAndOddHeaders }

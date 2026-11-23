@@ -152,24 +152,30 @@ export const WebOfficeOutlineDrawer = defineComponent({
       ed.focus();
     }
 
-    function runTocAction(action: 'insert' | 'refresh' | 'remove') {
+    function runTocAction(action: 'insert' | 'refreshPages' | 'refreshEntire' | 'remove') {
       const ed = editorRef.value;
       if (!ed) return;
       const res =
         action === 'insert'
           ? ed.exec({ type: 'insertToc' })
-          : action === 'refresh'
-            ? ed.exec({ type: 'refreshToc', mode: 'entire' })
-            : ed.exec({ type: 'removeToc' });
+          : action === 'refreshPages'
+            ? ed.exec({ type: 'refreshToc', mode: 'pageNumbers' })
+            : action === 'refreshEntire'
+              ? ed.exec({ type: 'refreshToc', mode: 'entire' })
+              : ed.exec({ type: 'removeToc' });
       if (!res.ok) {
         feedback.value = res.reason || '当前位置无法执行目录操作';
       } else {
         feedback.value =
           action === 'insert'
             ? '已插入自动目录'
-            : action === 'refresh'
-              ? '已更新目录'
-              : '已移除目录';
+            : action === 'refreshPages'
+              ? res.changed
+                ? '已仅更新页码（保留原目录样式）'
+                : '目录页码已是最新（保留原样式）'
+              : action === 'refreshEntire'
+                ? '已重建整个目录'
+                : '已移除目录';
       }
       ed.focus();
     }
@@ -371,23 +377,36 @@ export const WebOfficeOutlineDrawer = defineComponent({
                       'button',
                       {
                         type: 'button',
-                        class: 'weboffice-qbar__chip-btn',
-                        'data-testid': 'outline-refresh-toc',
-                        disabled: !canRefreshToc.value,
-                        onClick: () => runTocAction('refresh'),
-                      },
-                      '更新目录'
-                    ),
-                    h(
-                      'button',
-                      {
-                        type: 'button',
                         class: 'weboffice-qbar__chip-btn is-danger',
                         'data-testid': 'outline-remove-toc',
                         disabled: !canRemoveToc.value,
                         onClick: () => runTocAction('remove'),
                       },
                       '移除目录'
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'weboffice-qbar__chip-btn is-accent',
+                        'data-testid': 'outline-refresh-toc-pages',
+                        title: '仅更新现有目录页码，保留原段落样式与自定义制表位',
+                        disabled: !canRefreshToc.value,
+                        onClick: () => runTocAction('refreshPages'),
+                      },
+                      '只更新页码'
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'weboffice-qbar__chip-btn',
+                        'data-testid': 'outline-refresh-toc',
+                        title: '按最新标题重建整个目录条目与页码',
+                        disabled: !canRefreshToc.value,
+                        onClick: () => runTocAction('refreshEntire'),
+                      },
+                      '更新整个目录'
                     ),
                   ]),
                 ])

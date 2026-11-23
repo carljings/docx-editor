@@ -6,6 +6,7 @@
 // sub-object references stable across re-derivations.
 
 import { watermarkRefusal } from './docx-editor-watermark.ts';
+import { headerFooterOptionsSupport } from './docx-editor-hf.ts';
 import type { EditorCommand, EditorError } from '@docx-editor.dev/core/contracts/editor';
 import type { SemanticSelection as SurfaceSelection } from '@docx-editor.dev/core/layout';
 // Direct, not through the layout barrel: this is an internal bound the write shares with
@@ -785,16 +786,8 @@ export function classifyCommand(command: EditorCommand): CommandSupport {
       }
       return { supported: true, mutating: true };
     }
-    case 'setHeaderFooterOptions': {
-      const empty =
-        command.titlePage === undefined &&
-        command.evenAndOddHeaders === undefined &&
-        command.headerDistanceTwips === undefined &&
-        command.footerDistanceTwips === undefined;
-      return empty
-        ? { supported: false, reason: 'setHeaderFooterOptions requires at least one option' }
-        : { supported: true, mutating: true };
-    }
+    case 'setHeaderFooterOptions':
+      return headerFooterOptionsSupport(command);
     case 'insertPageField':
       return command.field === 'PAGE' ||
         command.field === 'NUMPAGES' ||

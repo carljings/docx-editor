@@ -17,6 +17,7 @@ import {
 } from './docx-editor-derive.ts';
 import { contentControlsOf, contentControlAtOf } from './content-controls.ts';
 import { chartDataOf, chartFormatOf } from './chart-commands.ts';
+import { sectionFurnitureOf } from './docx-editor-hf.ts';
 
 /** Shared query answers, including typed empty results for unsupported reads. */
 export function queryEditorDocument<K extends keyof EditorQueries>(
@@ -72,6 +73,8 @@ export function queryEditorDocument<K extends keyof EditorQueries>(
       return splitCellConfigOf(surface) as EditorQueryResults[K];
     case 'watermark':
       return watermarkQueryOf(surface) as EditorQueryResults[K];
+    case 'sectionFurniture':
+      return sectionFurnitureOf(surface) as EditorQueryResults[K];
     case 'bookmarks':
       return (surface?.bookmarkEditing.list() ?? []) as unknown as EditorQueryResults[K];
     case 'chartData':

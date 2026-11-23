@@ -101,6 +101,7 @@ export type HeaderFooterLifecycleOp =
   | {
       readonly op: 'setSectionFurnitureOptions';
       readonly sectionIndex?: number;
+      readonly allSections?: boolean;
       readonly titlePage?: boolean;
       readonly evenAndOddHeaders?: boolean;
       readonly headerDistanceTwips?: number;
@@ -426,7 +427,7 @@ function applyFurnitureOptions(
   }
 
   const needsSection = touchesTitle || touchesHeaderDist || touchesFooterDist;
-  if (needsSection) {
+  if (needsSection && !op.allSections) {
     if (
       op.sectionIndex === undefined ||
       !isNonNegInt(op.sectionIndex) ||
@@ -438,13 +439,29 @@ function applyFurnitureOptions(
 
   let next = pkg;
   if (needsSection) {
-    const patched = patchSectionFurniture(next, op.sectionIndex!, {
-      titlePage: op.titlePage,
-      headerDistanceTwips: op.headerDistanceTwips,
-      footerDistanceTwips: op.footerDistanceTwips,
-    });
-    if (!patched) return fail('tree-invariant', 'sectPr-options');
-    next = patched;
+    if (op.allSections) {
+      const main = next.parts.get(next.mainDocumentPart);
+      if (!main) return fail('tree-invariant', 'sectPr-options');
+      const count = collectSectionPropertyNodes(main.root).length;
+      if (count === 0) return fail('tree-invariant', 'sectPr-options');
+      for (let i = 0; i < count; i += 1) {
+        const patched = patchSectionFurniture(next, i, {
+          titlePage: op.titlePage,
+          headerDistanceTwips: op.headerDistanceTwips,
+          footerDistanceTwips: op.footerDistanceTwips,
+        });
+        if (!patched) return fail('tree-invariant', 'sectPr-options');
+        next = patched;
+      }
+    } else {
+      const patched = patchSectionFurniture(next, op.sectionIndex!, {
+        titlePage: op.titlePage,
+        headerDistanceTwips: op.headerDistanceTwips,
+        footerDistanceTwips: op.footerDistanceTwips,
+      });
+      if (!patched) return fail('tree-invariant', 'sectPr-options');
+      next = patched;
+    }
   }
 
   if (touchesEven) {

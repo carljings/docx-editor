@@ -232,14 +232,11 @@ export const OfficialFormatDialog = defineComponent({
         columnsSeparator.value = Boolean(ps.columns?.separator);
       }
       const hf = editorRef.value?.getHeaderFooterState();
-      headerDistStr.value =
-        typeof hf?.headerDistanceTwips === 'number'
-          ? String(twipsToCm(hf.headerDistanceTwips))
-          : '';
-      footerDistStr.value =
-        typeof hf?.footerDistanceTwips === 'number'
-          ? String(twipsToCm(hf.footerDistanceTwips))
-          : '';
+      const sf = editorRef.value?.query({ type: 'sectionFurniture' });
+      const headerTwips = hf?.headerDistanceTwips ?? sf?.headerDistanceTwips;
+      const footerTwips = hf?.footerDistanceTwips ?? sf?.footerDistanceTwips;
+      headerDistStr.value = typeof headerTwips === 'number' ? String(twipsToCm(headerTwips)) : '';
+      footerDistStr.value = typeof footerTwips === 'number' ? String(twipsToCm(footerTwips)) : '';
     }
 
     watch(
@@ -407,7 +404,11 @@ export const OfficialFormatDialog = defineComponent({
         return;
       }
       if (hfDist.hasChanges && editorRef.value) {
-        const res = editorRef.value.exec({ type: 'setHeaderFooterOptions', ...hfDist.update });
+        const res = editorRef.value.exec({
+          type: 'setHeaderFooterOptions',
+          scope: pageScope.value,
+          ...hfDist.update,
+        });
         if (!res.ok) {
           errorText.value = res.reason || '当前无法修改页眉/页脚距边界';
           return;

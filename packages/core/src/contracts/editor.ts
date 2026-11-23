@@ -126,6 +126,8 @@ import type {
 } from './types';
 import type {
   EditorHeaderFooterCommands,
+  EditorHeaderFooterQueries,
+  EditorHeaderFooterQueryResults,
   EditorNoteCommands,
   HeaderFooterState,
   NotePropertiesState,
@@ -1465,7 +1467,7 @@ export type EditorCommand = {
  * Extends {@link DocQueries} with the reads that only mean something against a live, laid-out
  * document: the selection, its formatting, the table or hyperlink under the caret.
  */
-export interface EditorQueries extends DocQueries, EditorChartQueries {
+export interface EditorQueries extends DocQueries, EditorChartQueries, EditorHeaderFooterQueries {
   selection: Record<never, never>;
   selectionFormatting: Record<never, never>;
   tableContext: Record<never, never>;
@@ -1478,21 +1480,17 @@ export interface EditorQueries extends DocQueries, EditorChartQueries {
   contentControlAt: { filter?: ContentControlFilter };
   isInsideToc: { pos: number };
   trackedChanges: Record<never, never>;
-  /** Every bookmark in the document, hidden ones included, in document order. */
   bookmarks: Record<never, never>;
 }
 
-/**
- * One query, as a discriminated union derived from {@link EditorQueries}.
- *
- * This is what `query` takes; {@link EditorQueryResults} says what each answers.
- */
+/** One query, as a discriminated union derived from {@link EditorQueries}. */
 export type EditorQuery = {
   [K in keyof EditorQueries]: { type: K } & EditorQueries[K];
 }[keyof EditorQueries];
 
 /** What each editor query returns. Keyed identically to `EditorQueries`. */
-export interface EditorQueryResults extends DocQueryResults, EditorChartQueryResults {
+export interface EditorQueryResults
+  extends DocQueryResults, EditorChartQueryResults, EditorHeaderFooterQueryResults {
   selection: DocRange | null;
   selectionFormatting: RunFormatting | null;
   tableContext: TableContext | null;

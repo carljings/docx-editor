@@ -25,11 +25,12 @@ type Op = Extract<TreeDocOp, { op: 'setTableProperties' }>;
 export function validateTableProperties(part: OoxmlPart, op: Op): TreeOpRejection | null {
   if (
     !Object.keys(op).every((key) =>
-      ['op', 'tableId', 'styleId', 'headerRowCount', 'columnWidthsTwips'].includes(key)
+      ['op', 'tableId', 'styleId', 'headerRowCount', 'columnWidthsTwips', 'borders'].includes(key)
     )
   )
     return 'invalidArgs';
   if (typeof op.tableId !== 'string') return 'invalidArgs';
+  if (op.borders !== undefined && op.borders !== 'none') return 'invalidArgs';
   const result = readEditableTableTopology(part.root, op.tableId);
   if (!result.ok) return result.reason === 'duplicate-node-id' ? 'unknown-table' : result.reason;
   const { rows, gridColumns, hasMerge } = result.topology;
@@ -140,6 +141,12 @@ export function applyTableProperties(part: OoxmlPart, op: Op, options?: EditOpti
       'tblPr',
       leaf(wmlChildNamed(updated, 'tblPr') ?? fresh('tblPr'), 'tblStyle', { val: op.styleId })
     );
+  if (op.borders === 'none') {
+    const sides = (['top', 'left', 'bottom', 'right', 'insideH', 'insideV'] as const).map((side) =>
+      fresh(side, { val: 'none' })
+    );
+    updated = patch(updated, 'tblPr', fresh('tblBorders', {}, sides));
+  }
   const replacements = new Map<string, OoxmlNode>();
   const cellWidths = new Map<string, number>();
   if (op.columnWidthsTwips) {

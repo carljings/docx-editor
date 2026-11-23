@@ -215,6 +215,8 @@ export const WpsQuickBar = defineComponent({
       const ed = editorRef.value;
       if (!ed) return;
       if (next === 'pageExtras') {
+        const sf = ed.query({ type: 'sectionFurniture' });
+        localTitlePage.value = Boolean(hfState.value?.titlePage ?? sf?.titlePage ?? false);
         const wm = ed.query({ type: 'watermark' });
         watermarkState.value = { has: wm !== null, text: wm?.text ?? '' };
         if (wm?.text) customWmText.value = wm.text;
@@ -484,8 +486,11 @@ export const WpsQuickBar = defineComponent({
       openPopover.value = 'none';
       const ed = editorRef.value;
       if (!ed) return;
-      const out = runHeaderFooterQuickAction(ed, action, localTitlePage.value);
-      if (out.titlePage !== undefined) localTitlePage.value = out.titlePage;
+      const out = runHeaderFooterQuickAction(ed, action);
+      const sf = ed.query({ type: 'sectionFurniture' });
+      localTitlePage.value = Boolean(
+        ed.getHeaderFooterState()?.titlePage ?? sf?.titlePage ?? false
+      );
       showToast(out.message);
       ed.focus();
     }

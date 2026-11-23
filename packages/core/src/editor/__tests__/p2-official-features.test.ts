@@ -337,4 +337,165 @@ describe('P2 Header/Footer, Official Page Numbers, Watermark, Outline/TOC/Bookma
     expect(editor.exec({ type: 'deleteBookmark', name: '第一条锚点' }).ok).toBe(true);
     expect(editor.query({ type: 'bookmarks' }).some((b) => b.name === '第一条锚点')).toBe(false);
   });
+
+  test('spaced table with direct w:tblBorders clears outer box on tableNone/threeLine, keeps tblCellSpacing, and undoes in one step', () => {
+    const spacedTbl =
+      `<w:tbl><w:tblPr>` +
+      `<w:tblCellSpacing w:w="80" w:type="dxa"/>` +
+      `<w:tblBorders><w:top w:val="single" w:sz="24" w:color="C01212"/><w:left w:val="single" w:sz="24" w:color="C01212"/><w:bottom w:val="single" w:sz="24" w:color="C01212"/><w:right w:val="single" w:sz="24" w:color="C01212"/></w:tblBorders>` +
+      `</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>甲1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>乙1</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>甲2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>乙2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const { editor, surface } = openEditor(docx(spacedTbl));
+    selectPara(surface, 0, 0, 0);
+    const beforeXml = serializeOoxmlPart(surface.session.part());
+
+    expect(editor.exec({ type: 'setTableBorders', scope: 'tableNone' }).ok).toBe(true);
+    const afterNone = serializeOoxmlPart(surface.session.part());
+    expect(afterNone).toContain('w:tblCellSpacing');
+    expect(afterNone).toContain('w:w="80"');
+    expect(afterNone).not.toContain('C01212');
+    expect(afterNone).not.toContain('w:val="single"');
+    const tblBordersMatch = afterNone.match(/<w:tblBorders>[\s\S]*?<\/w:tblBorders>/);
+    expect(tblBordersMatch).not.toBeNull();
+    expect(hasBorder(tblBordersMatch![0]!, 'top', 'none')).toBe(true);
+    expect(hasBorder(tblBordersMatch![0]!, 'bottom', 'none')).toBe(true);
+    expect(hasBorder(tblBordersMatch![0]!, 'left', 'none')).toBe(true);
+    expect(hasBorder(tblBordersMatch![0]!, 'right', 'none')).toBe(true);
+
+    // Single undo restores red w:tblBorders and original cell borders bit-for-bit
+    expect(editor.exec({ type: 'undo' }).ok).toBe(true);
+    expect(serializeOoxmlPart(surface.session.part())).toBe(beforeXml);
+
+    // threeLine also clears the red outer w:tblBorders box while keeping tblCellSpacing
+    expect(editor.exec({ type: 'setTableBorders', scope: 'threeLine' }).ok).toBe(true);
+    const afterThree = serializeOoxmlPart(surface.session.part());
+    expect(afterThree).toContain('w:tblCellSpacing');
+    expect(afterThree).not.toContain('C01212');
+    expect(editor.exec({ type: 'undo' }).ok).toBe(true);
+    expect(serializeOoxmlPart(surface.session.part())).toBe(beforeXml);
+  });
+
+  test('multi-section sectionFurniture query reads caret section and setHeaderFooterOptions targets section vs document accurately', async () => {
+    const twoSectionBody =
+      `<w:p><w:r><w:t>第一节正文</w:t></w:r></w:p>` +
+      `<w:p><w:pPr><w:sectPr>` +
+      `<w:pgSz w:w="12240" w:h="15840"/>` +
+      `<w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="650" w:footer="600"/>` +
+      `</w:sectPr></w:pPr></w:p>` +
+      `<w:p><w:r><w:t>第二节正文</w:t></w:r></w:p>`;
+    const twoSectionDoc = zipSync({
+      '[Content_Types].xml': strToU8(
+        `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="${CT}">` +
+          `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+          `<Default Extension="xml" ContentType="application/xml"/>` +
+          `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+          `</Types>`
+      ),
+      '_rels/.rels': strToU8(
+        `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="${REL}">` +
+          `<Relationship Id="rId1" Type="${OD}" Target="word/document.xml"/>` +
+          `</Relationships>`
+      ),
+      'word/_rels/document.xml.rels': strToU8(
+        `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="${REL}"/>`
+      ),
+      'word/document.xml': strToU8(
+        `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="${W}"><w:body>${twoSectionBody}` +
+          `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="750" w:footer="700"/></w:sectPr>` +
+          `</w:body></w:document>`
+      ),
+    });
+
+    const { editor, surface } = openEditor(twoSectionDoc);
+    // Caret in Section 2 (paragraph index 2)
+    selectPara(surface, 2, 0, 0);
+    expect(editor.query({ type: 'sectionFurniture' })).toEqual({
+      sectionIndex: 1,
+      sectionCount: 2,
+      titlePage: false,
+      evenAndOddHeaders: false,
+      headerDistanceTwips: 750,
+      footerDistanceTwips: 700,
+    });
+
+    // Toggling titlePage from section 2 affects ONLY section 2
+    expect(editor.exec({ type: 'setHeaderFooterOptions', titlePage: true }).ok).toBe(true);
+    expect(editor.query({ type: 'sectionFurniture' })?.titlePage).toBe(true);
+
+    // Section-scoped header distance affects ONLY section 2
+    expect(
+      editor.exec({ type: 'setHeaderFooterOptions', scope: 'section', headerDistanceTwips: 850 }).ok
+    ).toBe(true);
+    const savedSection = strFromU8(
+      unzipSync(new Uint8Array(await editor.save()))['word/document.xml']!
+    );
+    const sectPrs = [...savedSection.matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g)].map(
+      (m) => m[0]!
+    );
+    expect(sectPrs.length).toBe(2);
+    expect(sectPrs[0]).not.toContain('<w:titlePg');
+    expect(sectPrs[0]).toContain('w:header="650"');
+    expect(sectPrs[0]).toContain('w:footer="600"');
+    expect(sectPrs[1]).toContain('<w:titlePg');
+    expect(sectPrs[1]).toContain('w:header="850"');
+    expect(sectPrs[1]).toContain('w:footer="700"');
+
+    // Document-scoped footer distance updates BOTH sections in one undoable step
+    expect(
+      editor.exec({ type: 'setHeaderFooterOptions', scope: 'document', footerDistanceTwips: 992 })
+        .ok
+    ).toBe(true);
+    const savedDocScope = strFromU8(
+      unzipSync(new Uint8Array(await editor.save()))['word/document.xml']!
+    );
+    const sectPrsAll = [...savedDocScope.matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g)].map(
+      (m) => m[0]!
+    );
+    expect(sectPrsAll[0]).toContain('w:footer="992"');
+    expect(sectPrsAll[1]).toContain('w:footer="992"');
+
+    // Single undo restores both sections' original footer distances
+    expect(editor.exec({ type: 'undo' }).ok).toBe(true);
+    const afterUndo = strFromU8(
+      unzipSync(new Uint8Array(await editor.save()))['word/document.xml']!
+    );
+    const sectPrsUndone = [...afterUndo.matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g)].map(
+      (m) => m[0]!
+    );
+    expect(sectPrsUndone[0]).toContain('w:footer="600"');
+    expect(sectPrsUndone[1]).toContain('w:footer="700"');
+  });
+
+  test('refreshToc pageNumbers preserves custom TOC paragraph style and right-aligned tab stop', async () => {
+    const customStyles =
+      `<?xml version="1.0" encoding="UTF-8"?><w:styles xmlns:w="${W}">` +
+      `<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="31"><w:name w:val="CustomToc1"/></w:style>` +
+      `</w:styles>`;
+    const customTocBody =
+      `<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>` +
+      `<w:p><w:pPr><w:pStyle w:val="31"/><w:tabs><w:tab w:val="right" w:pos="6100"/></w:tabs></w:pPr>` +
+      `<w:r><w:fldChar w:fldCharType="begin"/><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h </w:instrText><w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:hyperlink w:anchor="_Toc1"><w:r><w:t>一、样件正文</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>9</w:t></w:r></w:hyperlink>` +
+      `<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>` +
+      `</w:sdtContent></w:sdt>` +
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:bookmarkStart w:id="1" w:name="_Toc1"/><w:r><w:t>一、样件正文</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>`;
+    const { editor } = openEditor(docx(customTocBody, { 'word/styles.xml': customStyles }));
+    expect(editor.exec({ type: 'refreshToc', mode: 'pageNumbers' }).ok).toBe(true);
+    const xml = strFromU8(unzipSync(new Uint8Array(await editor.save()))['word/document.xml']!);
+    expect(xml).toContain('<w:pStyle w:val="31"/>');
+    expect(xml).toContain('w:pos="6100"');
+    expect(xml).toContain('<w:t>1</w:t>');
+    expect(xml).not.toContain('<w:t>9</w:t>');
+
+    // Full rebuild (mode: 'entire') ALSO preserves custom style 31 and 6100 twips tab stop
+    expect(editor.exec({ type: 'refreshToc', mode: 'entire' }).ok).toBe(true);
+    const xmlEntire = strFromU8(
+      unzipSync(new Uint8Array(await editor.save()))['word/document.xml']!
+    );
+    expect(xmlEntire).toContain('<w:pStyle w:val="31"/>');
+    expect(xmlEntire).toContain('w:pos="6100"');
+    expect(xmlEntire).not.toContain('w:val="TOC1"');
+  });
 });

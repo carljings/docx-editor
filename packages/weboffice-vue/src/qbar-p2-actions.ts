@@ -103,22 +103,38 @@ export async function insertRasterImageFromFile(
   }
 }
 
+function prepareCenteredFooterParagraph(ed: Editor): void {
+  const range = ed.getSelectionRange();
+  if (!range) return;
+  const para = ed.getParagraphText(range.head.blockId);
+  if (para && para.text.trim().length > 0) {
+    const endPos = { blockId: para.blockId, offset: para.text.length };
+    ed.exec({
+      type: 'setSelection',
+      range: { anchor: endPos, head: endPos },
+    });
+    ed.exec({ type: 'splitParagraph' });
+  }
+}
+
 /**
  * Execute header/footer/page-number actions cleanly against Core's OOXML commands.
- * Inserts official centered `— X —` page numbers and page fields, auto-entering
- * the footer and returning to body when triggered from body scope.
+ * Resolves the active caret section even from body scope, protects existing headers
+ * when inserting official centered `— X —` footer page numbers, and preserves any
+ * pre-existing footer text on its own line.
  */
 export function runHeaderFooterQuickAction(
   ed: Editor,
-  action: HeaderFooterQuickAction,
-  knownTitlePage = false
+  action: HeaderFooterQuickAction
 ): { readonly ok: boolean; readonly message: string; readonly titlePage?: boolean } {
   const hfState = ed.getHeaderFooterState();
-  const wasInHf = hfState !== null && hfState.editing !== null;
+  const sf = ed.query({ type: 'sectionFurniture' });
+  const targetSectionIndex = hfState?.sectionIndex ?? sf?.sectionIndex ?? 0;
+  const wasEditing = hfState?.editing ?? null;
 
   if (action === 'editHeader' || action === 'editFooter') {
     const position = action === 'editHeader' ? 'header' : 'footer';
-    const res = ed.exec({ type: 'editHeaderFooter', position });
+    const res = ed.exec({ type: 'editHeaderFooter', position, sectionIndex: targetSectionIndex });
     return res.ok
       ? { ok: true, message: position === 'header' ? '已进入页眉编辑' : '已进入页脚编辑' }
       : { ok: false, message: res.reason || '当前位置无法编辑页眉页脚' };
@@ -132,11 +148,11 @@ export function runHeaderFooterQuickAction(
   }
 
   if (action === 'toggleFirstPage') {
-    const current = hfState?.titlePage ?? knownTitlePage;
+    const current = hfState?.titlePage ?? sf?.titlePage ?? false;
     const next = !current;
     const res = ed.exec({
       type: 'setHeaderFooterOptions',
-      sectionIndex: hfState?.sectionIndex ?? 0,
+      sectionIndex: targetSectionIndex,
       titlePage: next,
     });
     return res.ok
@@ -146,41 +162,65 @@ export function runHeaderFooterQuickAction(
 
   if (action === 'removeHeader' || action === 'removeFooter') {
     const position = action === 'removeHeader' ? 'header' : 'footer';
-    const res = ed.exec({ type: 'removeHeaderFooter', position });
+    const res = ed.exec({ type: 'removeHeaderFooter', position, sectionIndex: targetSectionIndex });
     return res.ok
       ? { ok: true, message: position === 'header' ? '已删除页眉' : '已删除页脚' }
       : { ok: false, message: res.reason || '当前节没有可删除的页眉或页脚' };
   }
 
-  // Page number / page field insertion (auto-entering footer when triggered from body)
-  let enteredTemporarily = false;
-  if (!wasInHf) {
-    const entered = ed.exec({ type: 'editHeaderFooter', position: 'footer' });
-    if (!entered.ok) {
-      return { ok: false, message: entered.reason || '当前文档无法插入页码' };
-    }
-    enteredTemporarily = true;
-  }
-
   if (action === 'insertOfficialPageNum') {
+    // Official folio (`— X —`) ALWAYS targets the active section's footer, never polluting headers.
+    const mustSwitchToFooter = wasEditing !== 'footer';
+    if (wasEditing === 'header') {
+      ed.exec({ type: 'exitHeaderFooter' });
+    }
+    if (mustSwitchToFooter) {
+      const entered = ed.exec({
+        type: 'editHeaderFooter',
+        position: 'footer',
+        sectionIndex: targetSectionIndex,
+      });
+      if (!entered.ok) {
+        return { ok: false, message: entered.reason || '当前文档无法插入页码' };
+      }
+      prepareCenteredFooterParagraph(ed);
+    }
+
     const alignRes = ed.exec({ type: 'setAlignment', align: 'center' });
     if (!alignRes.ok) {
-      if (enteredTemporarily) ed.exec({ type: 'exitHeaderFooter' });
+      if (mustSwitchToFooter) ed.exec({ type: 'exitHeaderFooter' });
       return { ok: false, message: alignRes.reason || '无法设置页码居中' };
     }
     const leftRes = ed.exec({ type: 'replaceText', text: '— ' });
     if (!leftRes.ok) {
-      if (enteredTemporarily) ed.exec({ type: 'exitHeaderFooter' });
+      if (mustSwitchToFooter) ed.exec({ type: 'exitHeaderFooter' });
       return { ok: false, message: leftRes.reason || '无法插入页码修饰符' };
     }
     const fieldRes = ed.exec({ type: 'insertPageField', field: 'PAGE' });
     if (!fieldRes.ok) {
-      if (enteredTemporarily) ed.exec({ type: 'exitHeaderFooter' });
+      if (mustSwitchToFooter) ed.exec({ type: 'exitHeaderFooter' });
       return { ok: false, message: fieldRes.reason || '无法插入页码域' };
     }
     ed.exec({ type: 'replaceText', text: ' —' });
-    if (enteredTemporarily) ed.exec({ type: 'exitHeaderFooter' });
+    if (mustSwitchToFooter) ed.exec({ type: 'exitHeaderFooter' });
     return { ok: true, message: '已在页脚插入公文页码（— X —）' };
+  }
+
+  // Generic page fields insert at the caret when already editing a header/footer,
+  // or auto-enter the current section's footer when triggered from body scope.
+  let enteredTemporarily = false;
+  if (wasEditing === null) {
+    const entered = ed.exec({
+      type: 'editHeaderFooter',
+      position: 'footer',
+      sectionIndex: targetSectionIndex,
+    });
+    if (!entered.ok) {
+      return { ok: false, message: entered.reason || '当前文档无法插入页码' };
+    }
+    enteredTemporarily = true;
+    prepareCenteredFooterParagraph(ed);
+    ed.exec({ type: 'setAlignment', align: 'center' });
   }
 
   const field =
@@ -189,9 +229,6 @@ export function runHeaderFooterQuickAction(
       : action === 'insertNumPages'
         ? ('NUMPAGES' as const)
         : ('PAGE_X_OF_Y' as const);
-  if (enteredTemporarily) {
-    ed.exec({ type: 'setAlignment', align: 'center' });
-  }
   const res = ed.exec({ type: 'insertPageField', field });
   if (enteredTemporarily) ed.exec({ type: 'exitHeaderFooter' });
   if (!res.ok) return { ok: false, message: res.reason || '无法插入页码域' };

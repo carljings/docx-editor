@@ -770,6 +770,8 @@ export type TreeDocOp =
       readonly styleId?: string;
       readonly headerRowCount?: number;
       readonly columnWidthsTwips?: readonly number[];
+      /** Explicitly clear table-level `w:tblBorders` (`val="none"` on all 6 sides). */
+      readonly borders?: 'none';
     }
   | {
       /** Set one authored table row to an exact height in twips. */
@@ -847,6 +849,7 @@ export type TreeDocOp =
        */
       readonly op: 'setSectionFurnitureOptions';
       readonly sectionIndex?: number;
+      readonly allSections?: boolean;
       readonly titlePage?: boolean;
       readonly evenAndOddHeaders?: boolean;
       readonly headerDistanceTwips?: number;

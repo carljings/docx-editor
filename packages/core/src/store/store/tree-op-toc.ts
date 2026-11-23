@@ -320,7 +320,10 @@ function replaceResultParagraphs(
   // discard document-specific tabs, indents, spacing, or bidi settings. Fresh ids are minted
   // by the builder; only the formatting shape is reused.
   const propertiesByStyle = new Map<string, OoxmlNode>();
-  for (const paragraphId of toc.resultParagraphIds) {
+  const propertiesByIndex: (OoxmlNode | undefined)[] = [];
+  let fallbackCustomProps: OoxmlNode | undefined;
+  for (let rowIdx = 0; rowIdx < toc.resultParagraphIds.length; rowIdx += 1) {
+    const paragraphId = toc.resultParagraphIds[rowIdx]!;
     const paragraph = findNode(part, paragraphId);
     if (!paragraph || paragraph.kind === 'textValue') continue;
     const properties = paragraph.children.find(
@@ -332,13 +335,17 @@ function replaceResultParagraphs(
     );
     if (style?.kind === 'textValue') continue;
     const styleId = style?.attributes.find((attribute) => attribute.localName === 'val')?.value;
+    const cleaned = {
+      ...properties,
+      children: properties.children.filter(
+        (child) => child.kind === 'textValue' || child.localName !== 'sectPr'
+      ),
+    } as OoxmlNode;
     if (styleId?.startsWith('TOC') && !propertiesByStyle.has(styleId)) {
-      propertiesByStyle.set(styleId, {
-        ...properties,
-        children: properties.children.filter(
-          (child) => child.kind === 'textValue' || child.localName !== 'sectPr'
-        ),
-      } as OoxmlNode);
+      propertiesByStyle.set(styleId, cleaned);
+    } else if (styleId && !/^Heading\d$/i.test(styleId)) {
+      propertiesByIndex[rowIdx] = cleaned;
+      if (!fallbackCustomProps) fallbackCustomProps = cleaned;
     }
   }
   const mint = createNodeIdAllocator(part);
@@ -354,11 +361,13 @@ function replaceResultParagraphs(
       identity,
       hostPrefix
     );
-  const newEntries = entries.map((entry) => {
+  const newEntries = entries.map((entry, idx) => {
     const styleId = `TOC${Math.min(entry.level + 1, 9)}`;
-    return withIdentity(
-      buildTocEntryParagraph(mint, entry, toc.instruction, propertiesByStyle.get(styleId))
-    );
+    const template =
+      propertiesByStyle.get(styleId) ??
+      propertiesByIndex[idx] ??
+      (entry.level === 0 ? fallbackCustomProps : undefined);
+    return withIdentity(buildTocEntryParagraph(mint, entry, toc.instruction, template));
   });
   const begin = container.children[beginIdx] as OoxmlElement;
   const end = container.children[endIdx] as OoxmlElement;
