@@ -498,4 +498,48 @@ describe('P2 Header/Footer, Official Page Numbers, Watermark, Outline/TOC/Bookma
     expect(xmlEntire).toContain('w:pos="6100"');
     expect(xmlEntire).not.toContain('w:val="TOC1"');
   });
+
+  test('refreshToc entire on mixed-level custom TOC matches existing targets and level templates when a new heading is inserted', async () => {
+    const mixedStyles =
+      `<?xml version="1.0" encoding="UTF-8"?><w:styles xmlns:w="${W}">` +
+      `<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:outlineLvl w:val="1"/></w:pPr></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="31"><w:name w:val="CustomToc1"/></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="32"><w:name w:val="CustomToc2"/></w:style>` +
+      `</w:styles>`;
+    const mixedBody =
+      `<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>` +
+      `<w:p><w:pPr><w:pStyle w:val="31"/><w:tabs><w:tab w:val="right" w:pos="6100"/></w:tabs></w:pPr>` +
+      `<w:r><w:fldChar w:fldCharType="begin"/><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h </w:instrText><w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:hyperlink w:anchor="_Toc1600000001"><w:r><w:t>一、样件正文</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>1</w:t></w:r></w:hyperlink></w:p>` +
+      `<w:p><w:pPr><w:pStyle w:val="32"/><w:tabs><w:tab w:val="right" w:pos="5500"/></w:tabs></w:pPr>` +
+      `<w:hyperlink w:anchor="_Toc1600000002"><w:r><w:t>二、样件第二页</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>2</w:t></w:r></w:hyperlink></w:p>` +
+      `<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>` +
+      `</w:sdtContent></w:sdt>` +
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:bookmarkStart w:id="2" w:name="_Toc1600000001"/><w:r><w:t>一、样件正文</w:t></w:r><w:bookmarkEnd w:id="2"/></w:p>` +
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>新增一级标题</w:t></w:r></w:p>` +
+      `<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:bookmarkStart w:id="3" w:name="_Toc1600000002"/><w:r><w:t>二、样件第二页</w:t></w:r><w:bookmarkEnd w:id="3"/></w:p>`;
+    const { editor } = openEditor(docx(mixedBody, { 'word/styles.xml': mixedStyles }));
+    expect(editor.exec({ type: 'refreshToc', mode: 'entire' }).ok).toBe(true);
+    const xml = strFromU8(unzipSync(new Uint8Array(await editor.save()))['word/document.xml']!);
+    const sdtXml = xml.match(/<w:sdtContent>[\s\S]*?<\/w:sdtContent>/)?.[0] ?? '';
+    const tocParas = [...sdtXml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)]
+      .map((m) => m[0]!)
+      .filter((p) => p.includes('<w:hyperlink'));
+    expect(tocParas.length).toBe(3);
+    // Entry 1 (existing Heading1) -> style 31, tab 6100
+    expect(tocParas[0]).toContain('一、样件正文');
+    expect(tocParas[0]).toContain('<w:pStyle w:val="31"/>');
+    expect(tocParas[0]).toContain('w:pos="6100"');
+    // Entry 2 (new Heading1 inserted before Heading2) -> inherits level-1 custom style 31, tab 6100
+    expect(tocParas[1]).toContain('新增一级标题');
+    expect(tocParas[1]).toContain('<w:pStyle w:val="31"/>');
+    expect(tocParas[1]).toContain('w:pos="6100"');
+    // Entry 3 (existing Heading2 _Toc1600000002) -> keeps custom style 32, tab 5500
+    expect(tocParas[2]).toContain('二、样件第二页');
+    expect(tocParas[2]).toContain('<w:pStyle w:val="32"/>');
+    expect(tocParas[2]).toContain('w:pos="5500"');
+    expect(sdtXml).not.toContain('w:val="TOC1"');
+    expect(sdtXml).not.toContain('w:val="TOC2"');
+  });
 });

@@ -504,8 +504,8 @@ function usedTocNumbers(index: BookmarkIndex): Set<string> {
  */
 function nextTocBookmarkNumber(index: BookmarkIndex, actorId?: string): () => number {
   const actor = resolveAllocationActor(actorId);
+  const used = usedTocNumbers(index);
   if (actor) {
-    const used = usedTocNumbers(index);
     return () => {
       const id = nextStripedDecimalId(used, actor, MAX_DECIMAL_ID);
       used.add(id);
@@ -513,7 +513,11 @@ function nextTocBookmarkNumber(index: BookmarkIndex, actorId?: string): () => nu
     };
   }
   let next = TOC_SOLO_BASE + (index.size % TOC_SOLO_SPREAD);
-  return () => next++;
+  return () => {
+    while (used.has(String(next))) next++;
+    used.add(String(next));
+    return next++;
+  };
 }
 
 /**

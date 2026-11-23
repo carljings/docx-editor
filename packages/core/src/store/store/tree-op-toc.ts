@@ -1,6 +1,6 @@
 import { withHeadingSymbols } from './toc-heading-symbols.ts';
 import { resolveTocSources } from '../package/toc-sources.ts';
-import { tocRowOmitsPageNumber } from '../package/toc-rows.ts';
+import { resolveTocRowHeadings, tocRowAnchor, tocRowOmitsPageNumber } from '../package/toc-rows.ts';
 import { sliceTocParagraph } from '../package/toc-result.ts';
 // TOC refresh TreeDocOps — replace result paragraphs / rewrite page-number runs.
 
@@ -316,11 +316,31 @@ function replaceResultParagraphs(
   }
 
   // Word commonly stores TOC geometry directly on each cached result paragraph even when a
-  // TOC1…TOC9 style is also present. Preserve one template per level so refresh does not
-  // discard document-specific tabs, indents, spacing, or bidi settings. Fresh ids are minted
-  // by the builder; only the formatting shape is reused.
+  // TOC1…TOC9 or custom template style is present. Match existing rows back to their target
+  // heading by bookmark anchor / resolved heading id first, and index custom templates by
+  // heading level so newly inserted headings inherit their own level's template format.
+  const entryByBookmark = new Map<string, TocEntryPlan>();
+  const entryByHeadingId = new Map<string, TocEntryPlan>();
+  for (const entry of entries) {
+    if (!entryByBookmark.has(entry.bookmarkName)) entryByBookmark.set(entry.bookmarkName, entry);
+    if (!entryByHeadingId.has(entry.headingParagraphId)) {
+      entryByHeadingId.set(entry.headingParagraphId, entry);
+    }
+  }
+  const resolvedHeadingIds = resolveTocRowHeadings(
+    part,
+    toc,
+    entries.map((entry) => ({
+      text: entry.text,
+      level: entry.level,
+      blockId: entry.headingParagraphId,
+    })),
+    new Set()
+  );
   const propertiesByStyle = new Map<string, OoxmlNode>();
-  const propertiesByIndex: (OoxmlNode | undefined)[] = [];
+  const customByAnchor = new Map<string, OoxmlNode>();
+  const customByHeadingId = new Map<string, OoxmlNode>();
+  const customByLevel = new Map<number, OoxmlNode>();
   let fallbackCustomProps: OoxmlNode | undefined;
   for (let rowIdx = 0; rowIdx < toc.resultParagraphIds.length; rowIdx += 1) {
     const paragraphId = toc.resultParagraphIds[rowIdx]!;
@@ -344,7 +364,18 @@ function replaceResultParagraphs(
     if (styleId?.startsWith('TOC') && !propertiesByStyle.has(styleId)) {
       propertiesByStyle.set(styleId, cleaned);
     } else if (styleId && !/^Heading\d$/i.test(styleId)) {
-      propertiesByIndex[rowIdx] = cleaned;
+      const anchor = tocRowAnchor(sliceTocParagraph(paragraph, toc, 'result'));
+      const headingId = resolvedHeadingIds[rowIdx] ?? undefined;
+      const matched =
+        (anchor ? entryByBookmark.get(anchor) : undefined) ??
+        (headingId ? entryByHeadingId.get(headingId) : undefined);
+      if (anchor && !customByAnchor.has(anchor)) customByAnchor.set(anchor, cleaned);
+      if (matched) {
+        if (!customByHeadingId.has(matched.headingParagraphId)) {
+          customByHeadingId.set(matched.headingParagraphId, cleaned);
+        }
+        if (!customByLevel.has(matched.level)) customByLevel.set(matched.level, cleaned);
+      }
       if (!fallbackCustomProps) fallbackCustomProps = cleaned;
     }
   }
@@ -361,11 +392,13 @@ function replaceResultParagraphs(
       identity,
       hostPrefix
     );
-  const newEntries = entries.map((entry, idx) => {
+  const newEntries = entries.map((entry) => {
     const styleId = `TOC${Math.min(entry.level + 1, 9)}`;
     const template =
+      customByAnchor.get(entry.bookmarkName) ??
+      customByHeadingId.get(entry.headingParagraphId) ??
       propertiesByStyle.get(styleId) ??
-      propertiesByIndex[idx] ??
+      customByLevel.get(entry.level) ??
       (entry.level === 0 ? fallbackCustomProps : undefined);
     return withIdentity(buildTocEntryParagraph(mint, entry, toc.instruction, template));
   });

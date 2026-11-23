@@ -116,6 +116,11 @@ function rowTitles(paragraph: OoxmlNode): readonly string[] {
   return [tocEntryText(pageTab < 0 ? title : title.slice(0, pageTab)), tocEntryText(title)];
 }
 
+/** The bookmark anchor a cached TOC result row targets via hyperlink or PAGEREF. */
+export function tocRowAnchor(paragraph: OoxmlNode): string | undefined {
+  return rowAnchor(paragraph) ?? rowPageRefAnchor(paragraph);
+}
+
 /** A stale cached label can still identify an omitted-number TC entry through its anchor. */
 export function tocRowOmitsPageNumber(
   part: OoxmlPart,
@@ -124,7 +129,7 @@ export function tocRowOmitsPageNumber(
 ): boolean {
   const titles = rowTitles(paragraph);
   const fullTitle = titles[titles.length - 1];
-  const anchor = rowAnchor(paragraph) ?? rowPageRefAnchor(paragraph);
+  const anchor = tocRowAnchor(paragraph);
   const target = anchor === undefined ? undefined : buildBookmarkIndex(part).get(anchor);
   if (!target) {
     return sources.some(
