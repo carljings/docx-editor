@@ -1108,7 +1108,7 @@ export interface EditorCommands
    */
   setParagraphFormat: ParagraphFormatCommand;
 
-  toggleList: { kind: 'bullet' | 'ordered'; preset?: import('./types.ts').ToggleListPreset };
+  toggleList: import('./types.ts').ToggleListCommand;
 
   insertRow: { where: 'above' | 'below'; target?: TableRowOccurrenceTarget };
   insertColumn: { where: 'left' | 'right'; target?: TableColumnOccurrenceTarget };
@@ -1188,7 +1188,7 @@ export interface EditorCommands
     marginBottom?: number;
     marginLeft?: number;
     orientation?: 'portrait' | 'landscape';
-    columns?: { count: number; spaceTwips?: number; separator?: boolean };
+    columns?: import('./types.ts').PageSetupColumnsPatch;
     scope?: 'document' | 'section';
   };
 

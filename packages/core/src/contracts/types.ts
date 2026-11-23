@@ -119,17 +119,26 @@ export interface ParagraphFormatCommand {
    * "Clear All" does; omit the field to leave them as authored.
    */
   tabStops?: readonly ParagraphTabStop[];
-  /** Paragraph borders (`w:pBdr`): non-empty replaces edges, empty array clears direct borders. */
+  /** Paragraph borders (`w:pBdr`): non-empty replaces edges (or merges per-side when `borderMode: 'merge'`), empty array clears direct borders. */
   borders?: readonly {
     readonly edge: 'top' | 'left' | 'bottom' | 'right' | 'between' | 'bar';
     readonly attributes: Readonly<Record<string, string>>;
   }[];
+  /** How `borders` combines with existing direct `w:pBdr` edges: `'replace'` (default) or `'merge'`. */
+  borderMode?: 'replace' | 'merge';
   /** Paragraph background shading fill (`w:shd/@w:fill`, 6-hex RRGGBB); `null` clears direct shading. */
   shading?: string | null;
 }
 
 /** Optional preset for `toggleList` (Chinese official numbering or explicit clear). */
 export type ToggleListPreset = 'cn-heading1' | 'cn-heading2' | 'cn-decimal' | 'cn-paren' | 'clear';
+
+/** Payload for `toggleList` editor command. */
+export interface ToggleListCommand {
+  kind: 'bullet' | 'ordered';
+  preset?: ToggleListPreset;
+  restart?: boolean;
+}
 
 /** One custom tab stop, as a command states it. @public */
 export interface ParagraphTabStop {
@@ -816,4 +825,11 @@ export interface CopyFlavoursResult {
   readonly html: string | null;
   readonly drawingNodeId?: string;
   readonly reason?: string;
+}
+
+/** Section column patch for `setPageSetup`; omitted fields preserve existing `w:cols` settings. */
+export interface PageSetupColumnsPatch {
+  readonly count?: number;
+  readonly spaceTwips?: number;
+  readonly separator?: boolean;
 }

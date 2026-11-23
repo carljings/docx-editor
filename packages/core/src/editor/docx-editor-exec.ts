@@ -234,6 +234,7 @@ export function execEditorCommand(
           : {}),
         ...(command.tabStops !== undefined ? { tabStops: command.tabStops } : {}),
         ...(command.borders !== undefined ? { borders: command.borders } : {}),
+        ...(command.borderMode !== undefined ? { borderMode: command.borderMode } : {}),
         ...(command.shading !== undefined ? { shading: command.shading } : {}),
       });
       if (!written) {
@@ -307,7 +308,7 @@ export function execEditorCommand(
       break;
     }
     case 'toggleList':
-      if (!mounted.toggleList(command.kind, command.preset)) {
+      if (!mounted.toggleList(command.kind, command.preset, command.restart)) {
         return {
           ok: false,
           code: 'invalidArgs',

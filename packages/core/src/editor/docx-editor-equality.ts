@@ -151,7 +151,9 @@ export function tableContextEqual(a: TableContext | null, b: TableContext | null
     a.rows === b.rows &&
     a.columns === b.columns &&
     a.rowIndex === b.rowIndex &&
-    a.columnIndex === b.columnIndex
+    a.columnIndex === b.columnIndex &&
+    a.headerRowCount === b.headerRowCount &&
+    a.isHeaderRow === b.isHeaderRow
   );
 }
 
@@ -170,6 +172,7 @@ export function pageSetupEqual(a: PageSetup | null, b: PageSetup | null): boolea
     a.gutterTwips === b.gutterTwips &&
     a.columns?.count === b.columns?.count &&
     a.columns?.gapTwips === b.columns?.gapTwips &&
+    (a.columns?.equalWidth !== false) === (b.columns?.equalWidth !== false) &&
     Boolean(a.columns?.separator) === Boolean(b.columns?.separator)
   );
 }

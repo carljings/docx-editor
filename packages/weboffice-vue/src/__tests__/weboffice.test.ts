@@ -218,13 +218,18 @@ describe('@weboffice/vue P1 official presets & page columns dirty-tracking', () 
       'cn-paren',
     ]);
     const red = PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'official-red');
+    expect(red?.mode).toBe('merge');
     expect(red?.edges).toEqual([
       { edge: 'bottom', attributes: { val: 'single', sz: '18', space: '4', color: 'DC2626' } },
     ]);
     const doubleRed = PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'official-double-red');
+    expect(doubleRed?.mode).toBe('merge');
     expect(doubleRed?.edges[0]?.attributes.val).toBe('double');
+    expect(PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'bottom-thin')?.mode).toBe('merge');
     expect(PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'box')?.edges.length).toBe(4);
+    expect(PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'box')?.mode).toBe('replace');
     expect(PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'none')?.edges.length).toBe(0);
+    expect(PARAGRAPH_BORDER_PRESETS.find((b) => b.id === 'none')?.mode).toBe('replace');
     for (const s of PARAGRAPH_SHADING_SWATCHES) {
       expect(s.hex === null || /^[0-9A-F]{6}$/.test(s.hex)).toBe(true);
     }
@@ -235,7 +240,7 @@ describe('@weboffice/vue P1 official presets & page columns dirty-tracking', () 
     }
   });
 
-  test('buildPageSetupUpdate only emits columns when columns is dirty and preserves custom paper', () => {
+  test('buildPageSetupUpdate patches columns per-attribute and supports zero-gap and 4+ columns', () => {
     const base = {
       dirty: {
         paper: false,
@@ -244,7 +249,9 @@ describe('@weboffice/vue P1 official presets & page columns dirty-tracking', () 
         marginBottom: false,
         marginLeft: false,
         marginRight: false,
-        columns: false,
+        columnsCount: false,
+        columnsSpace: false,
+        columnsSep: false,
       },
       paperId: 'custom',
       customPaperSize: { widthTwips: 12500, heightTwips: 17000 },
@@ -253,7 +260,7 @@ describe('@weboffice/vue P1 official presets & page columns dirty-tracking', () 
       marginBottomStr: '3.5',
       marginLeftStr: '2.8',
       marginRightStr: '2.6',
-      columnsCount: 2 as const,
+      columnsCount: 2,
       columnsSpaceStr: '0.75',
       columnsSeparator: true,
       scope: 'section' as const,
@@ -268,25 +275,44 @@ describe('@weboffice/vue P1 official presets & page columns dirty-tracking', () 
     expect(marginOnly.update.columns).toBeUndefined();
     expect(marginOnly.update.pageWidthTwips).toBeUndefined();
 
-    // Only columns dirty -> emits columns without overwriting paper/margins
-    const colsOnly = buildPageSetupUpdate({
+    // Only separator dirty -> emits ONLY { separator: true } without clobbering count/space/equalWidth
+    const sepOnly = buildPageSetupUpdate({
       ...base,
-      dirty: { ...base.dirty, columns: true },
+      columnsCount: 4,
+      columnsSpaceStr: '0',
+      dirty: { ...base.dirty, columnsSep: true },
     });
-    expect(colsOnly.hasChanges).toBe(true);
-    expect(colsOnly.update.pageWidthTwips).toBeUndefined();
-    expect(colsOnly.update.marginTopTwips).toBeUndefined();
-    expect(colsOnly.update.columns).toEqual({
+    expect(sepOnly.hasChanges).toBe(true);
+    expect(sepOnly.update.columns).toEqual({ separator: true });
+
+    // Explicit zero gap -> emits spaceTwips: 0
+    const zeroGap = buildPageSetupUpdate({
+      ...base,
+      columnsSpaceStr: '0',
+      dirty: { ...base.dirty, columnsSpace: true },
+    });
+    expect(zeroGap.hasChanges).toBe(true);
+    expect(zeroGap.update.columns).toEqual({ spaceTwips: 0 });
+
+    // All three column fields dirty -> emits full columns payload without overwriting paper/margins
+    const colsAll = buildPageSetupUpdate({
+      ...base,
+      dirty: { ...base.dirty, columnsCount: true, columnsSpace: true, columnsSep: true },
+    });
+    expect(colsAll.hasChanges).toBe(true);
+    expect(colsAll.update.pageWidthTwips).toBeUndefined();
+    expect(colsAll.update.marginTopTwips).toBeUndefined();
+    expect(colsAll.update.columns).toEqual({
       count: 2,
       spaceTwips: cmToTwips(0.75),
       separator: true,
     });
-    expect(colsOnly.update.scope).toBe('section');
+    expect(colsAll.update.scope).toBe('section');
 
     // Invalid column gap rejected
     const badGap = buildPageSetupUpdate({
       ...base,
-      dirty: { ...base.dirty, columns: true },
+      dirty: { ...base.dirty, columnsSpace: true },
       columnsSpaceStr: '12',
     });
     expect(badGap.error).toBeDefined();

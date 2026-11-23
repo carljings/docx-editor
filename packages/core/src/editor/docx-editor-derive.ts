@@ -58,6 +58,7 @@ import { allParagraphs } from '../binding/tree-binding.ts';
 import { paragraphStyleId } from '../binding/document-outline.ts';
 import type { PaginatedSurface } from './paginated-surface-contract.ts';
 import { bookmarkCommandRefusal } from './docx-editor-bookmarks.ts';
+import { tableHeaderRowCount } from './paragraph-format-indent.ts';
 
 /**
  * THE unified formatting derivation — the one place surface formatting becomes the
@@ -139,6 +140,7 @@ export function pageSetupOf(surface: PaginatedSurface | null): PageSetup | null 
     columns: {
       count: section.columns.count,
       gapTwips: section.columns.gapTwips,
+      ...(section.columns.equalWidth === false ? { equalWidth: false } : {}),
       ...(section.columns.separator ? { separator: true } : {}),
     },
   };
@@ -690,12 +692,16 @@ export function tableContextOf(surface: PaginatedSurface | null): TableContext |
   if (!cells && !caretMaybeInTableCell(surface, state.selection.head.paragraphId)) return null;
   const context = tableContextAt(surface.layout(), state.selection.head.paragraphId);
   if (!context) return null;
+  const rowIndex = cells ? cells.rows.from : context.rowIndex;
+  const part = surface.session.partFor(surface.storyScope()) ?? surface.session.part();
+  const headerRowCount = tableHeaderRowCount(part, context.tableId);
   return {
     rows: context.rows,
     columns: context.columns,
     // A rectangle reports its top-left, which is where its commands are anchored.
-    rowIndex: cells ? cells.rows.from : context.rowIndex,
+    rowIndex,
     columnIndex: cells ? cells.columns.from : context.columnIndex,
+    ...(headerRowCount > 0 ? { headerRowCount, isHeaderRow: rowIndex < headerRowCount } : {}),
   };
 }
 

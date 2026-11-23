@@ -30,6 +30,7 @@ export interface ParagraphBorderPresetItem {
   readonly label: string;
   readonly testId: string;
   readonly previewClass: string;
+  readonly mode: 'merge' | 'replace';
   readonly edges: readonly ParagraphBorderEdgeWrite[];
 }
 
@@ -42,6 +43,7 @@ export const PARAGRAPH_BORDER_PRESETS: readonly ParagraphBorderPresetItem[] = [
     label: '下框线',
     testId: 'border-bottom-thin',
     previewClass: 'is-bottom-thin',
+    mode: 'merge',
     edges: [{ edge: 'bottom', attributes: THIN_EDGE }],
   },
   {
@@ -49,6 +51,7 @@ export const PARAGRAPH_BORDER_PRESETS: readonly ParagraphBorderPresetItem[] = [
     label: '公文红线（2.25磅）',
     testId: 'border-official-red',
     previewClass: 'is-official-red',
+    mode: 'merge',
     edges: [
       { edge: 'bottom', attributes: { val: 'single', sz: '18', space: '4', color: 'DC2626' } },
     ],
@@ -58,6 +61,7 @@ export const PARAGRAPH_BORDER_PRESETS: readonly ParagraphBorderPresetItem[] = [
     label: '公文双红线',
     testId: 'border-official-double-red',
     previewClass: 'is-official-double-red',
+    mode: 'merge',
     edges: [
       { edge: 'bottom', attributes: { val: 'double', sz: '12', space: '4', color: 'DC2626' } },
     ],
@@ -67,6 +71,7 @@ export const PARAGRAPH_BORDER_PRESETS: readonly ParagraphBorderPresetItem[] = [
     label: '外框线',
     testId: 'border-box',
     previewClass: 'is-box',
+    mode: 'replace',
     edges: [
       { edge: 'top', attributes: BOX_EDGE },
       { edge: 'left', attributes: BOX_EDGE },
@@ -79,6 +84,7 @@ export const PARAGRAPH_BORDER_PRESETS: readonly ParagraphBorderPresetItem[] = [
     label: '无框线',
     testId: 'border-none',
     previewClass: 'is-none',
+    mode: 'replace',
     edges: [],
   },
 ];

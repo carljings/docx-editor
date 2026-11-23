@@ -55,6 +55,7 @@ export interface SurfaceParagraphFormat {
     readonly edge: 'top' | 'left' | 'bottom' | 'right' | 'between' | 'bar';
     readonly attributes: Readonly<Record<string, string>>;
   }[];
+  readonly borderMode?: 'replace' | 'merge';
   readonly shading?: string | null;
 }
 

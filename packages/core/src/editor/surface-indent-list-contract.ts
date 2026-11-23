@@ -98,7 +98,8 @@ export interface SurfaceIndentAndListOps {
    */
   toggleList(
     kind: 'bullet' | 'ordered',
-    preset?: 'cn-heading1' | 'cn-heading2' | 'cn-decimal' | 'cn-paren' | 'clear'
+    preset?: 'cn-heading1' | 'cn-heading2' | 'cn-decimal' | 'cn-paren' | 'clear',
+    restart?: boolean
   ): boolean;
   /** Whether every paragraph the selection touches is already a list of `kind`. */
   isListActive(kind: 'bullet' | 'ordered'): boolean;

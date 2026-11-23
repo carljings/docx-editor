@@ -3,10 +3,12 @@ import {
   computed,
   defineComponent,
   h,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
   shallowRef,
+  watch,
   type PropType,
 } from 'vue';
 import {
@@ -34,6 +36,7 @@ import {
 } from './qbar-clipboard';
 import type { UnderlineStylePreset } from './p1-presets';
 import {
+  clampPopoverWithinViewport,
   renderBordersMenu,
   renderNumberingMenu,
   renderTableContextSection,
@@ -67,6 +70,10 @@ const selectIsDisabled = (snapshot: EditorSnapshot): boolean =>
   snapshot.isLoading || snapshot.isOpening === true || !snapshot.editable;
 
 const selectInTable = (snapshot: EditorSnapshot): boolean => snapshot.table !== null;
+const selectTableHeaderCount = (snapshot: EditorSnapshot): number =>
+  snapshot.table?.headerRowCount ?? 0;
+const selectIsTableHeaderRow = (snapshot: EditorSnapshot): boolean =>
+  Boolean(snapshot.table?.isHeaderRow);
 
 /**
  * WPS 风格公文快捷增强工具栏（挂载于主工具栏下方，补齐 WPS 顶部栏高频 P0 + P1 能力）：
@@ -120,6 +127,10 @@ export const WpsQuickBar = defineComponent({
     const isDisabled = useEditorState(selectIsDisabled);
     // oxlint-disable-next-line react/rules-of-hooks
     const inTable = useEditorState(selectInTable);
+    // oxlint-disable-next-line react/rules-of-hooks
+    const tableHeaderRowCount = useEditorState(selectTableHeaderCount);
+    // oxlint-disable-next-line react/rules-of-hooks
+    const isTableHeaderRow = useEditorState(selectIsTableHeaderRow);
 
     const anchorRef = ref<HTMLElement | null>(null);
     const chromeBandEl = shallowRef<HTMLElement | null>(null);
@@ -167,8 +178,20 @@ export const WpsQuickBar = defineComponent({
       openPopover.value = 'none';
     }
 
+    function clampActivePopover() {
+      if (openPopover.value === 'none') return;
+      clampPopoverWithinViewport(barRef.value, props.hostElement);
+    }
+
+    watch(openPopover, async (next) => {
+      if (next === 'none') return;
+      await nextTick();
+      clampActivePopover();
+    });
+
     onMounted(() => {
       document.addEventListener('pointerdown', onDocPointerDown, true);
+      window.addEventListener('resize', clampActivePopover);
       locateChromeBand();
       const host = props.hostElement ?? anchorRef.value?.closest<HTMLElement>('.weboffice-host');
       if (host) {
@@ -179,6 +202,7 @@ export const WpsQuickBar = defineComponent({
 
     onBeforeUnmount(() => {
       document.removeEventListener('pointerdown', onDocPointerDown, true);
+      window.removeEventListener('resize', clampActivePopover);
       observer?.disconnect();
       if (toastTimer !== null) window.clearTimeout(toastTimer);
     });
@@ -307,11 +331,28 @@ export const WpsQuickBar = defineComponent({
       ed.focus();
     }
 
-    function applyParagraphBorder(edges: readonly ParagraphBorderEdgeWrite[], label: string) {
+    function restartNumbering() {
       openPopover.value = 'none';
       const ed = editorRef.value;
       if (!ed) return;
-      const res = ed.exec({ type: 'setParagraphFormat', borders: edges });
+      const res = ed.exec({ type: 'toggleList', kind: 'ordered', restart: true });
+      if (!res.ok) {
+        showToast('当前位置无法重新编号');
+      } else {
+        showToast('已从新序列开始编号');
+      }
+      ed.focus();
+    }
+
+    function applyParagraphBorder(
+      edges: readonly ParagraphBorderEdgeWrite[],
+      label: string,
+      mode: 'merge' | 'replace'
+    ) {
+      openPopover.value = 'none';
+      const ed = editorRef.value;
+      if (!ed) return;
+      const res = ed.exec({ type: 'setParagraphFormat', borders: edges, borderMode: mode });
       if (!res.ok) {
         showToast('当前位置无法设置段落边框');
       } else {
@@ -406,7 +447,14 @@ export const WpsQuickBar = defineComponent({
       if (!res.ok) {
         showToast(res.reason || '当前表格位置无法执行此操作');
       } else if (action === 'toggleHeaderRow') {
-        showToast('已切换跨页重复表头行');
+        const nextHeaders = ed.snapshot().table?.headerRowCount ?? 0;
+        showToast(
+          nextHeaders === 0
+            ? '已取消重复表头行'
+            : nextHeaders === 1
+              ? '已开启首行重复表头'
+              : `已设前 ${nextHeaders} 行为重复表头`
+        );
       } else if (action === 'mergeCells') {
         showToast('已合并选中单元格');
       }
@@ -716,7 +764,7 @@ export const WpsQuickBar = defineComponent({
                         onClick: () => togglePopover('numbering'),
                       }),
                       openPopover.value === 'numbering'
-                        ? renderNumberingMenu(applyNumberingPreset)
+                        ? renderNumberingMenu(applyNumberingPreset, restartNumbering)
                         : null,
                     ]),
                     h('div', { class: 'weboffice-qbar__dropdown' }, [
@@ -788,7 +836,8 @@ export const WpsQuickBar = defineComponent({
                             inTable.value
                               ? renderTableContextSection({
                                   canMerge: tableMergeCmd.isEnabled.value,
-                                  isHeaderRow: false,
+                                  isHeaderRow: isTableHeaderRow.value,
+                                  headerRowCount: tableHeaderRowCount.value,
                                   onAction: runTableContextAction,
                                 })
                               : null,

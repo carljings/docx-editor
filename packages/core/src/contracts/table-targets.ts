@@ -16,6 +16,10 @@ export interface TableContext {
   readonly rowIndex: number;
   /** Zero-based, within the row. */
   readonly columnIndex: number;
+  /** Count of leading contiguous repeating header rows (`w:tblHeader`), present when > 0. */
+  readonly headerRowCount?: number;
+  /** Whether the caret's row belongs to the repeating header block, present when `headerRowCount` > 0. */
+  readonly isHeaderRow?: boolean;
 }
 
 /** Which cell edges a table border command targets. */

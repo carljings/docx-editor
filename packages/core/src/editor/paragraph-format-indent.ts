@@ -1,4 +1,4 @@
-import type { OoxmlPart } from '../store/package/ooxml-tree.ts';
+import type { OoxmlElement, OoxmlPart } from '../store/package/ooxml-tree.ts';
 import { readEditableTableTopology } from '../store/store/tree-op-table-topology.ts';
 import { wmlAttributeValue, wmlChildNamed } from '../store/store/tree-op-table-shared.ts';
 import type { TreeDocOp } from '../store/store/tree-ops.ts';
@@ -47,39 +47,6 @@ export function writeFirstLineChars(
   return attributes;
 }
 
-/** Build `setListNumbering` ops for an explicit Chinese official list preset or clear. */
-export function buildPresetListOps(
-  touched: readonly string[],
-  preset: 'cn-heading1' | 'cn-heading2' | 'cn-decimal' | 'cn-paren' | 'clear',
-  deps: {
-    readonly ensureListDefinition: (
-      kind: 'ordered',
-      geometry: undefined,
-      preset: 'cn-heading1' | 'cn-heading2' | 'cn-decimal' | 'cn-paren'
-    ) => string | null;
-    readonly leaveOp: (
-      paragraphId: string
-    ) => import('@docx-editor.dev/core/store').TreeDocOp | null;
-  }
-): import('@docx-editor.dev/core/store').TreeDocOp[] | null {
-  if (preset === 'clear') {
-    const ops: import('@docx-editor.dev/core/store').TreeDocOp[] = [];
-    for (const paragraphId of touched) {
-      const op = deps.leaveOp(paragraphId);
-      if (op) ops.push(op);
-    }
-    return ops.length > 0 ? ops : null;
-  }
-  const numId = deps.ensureListDefinition('ordered', undefined, preset);
-  if (!numId) return null;
-  return touched.map((paragraphId) => ({
-    op: 'setListNumbering' as const,
-    paragraphId,
-    numId,
-    level: 0,
-  }));
-}
-
 export const UNDERLINE_VARIANTS: ReadonlySet<string> = new Set([
   'single',
   'double',
@@ -102,8 +69,15 @@ const BORDER_EDGE_NAMES: ReadonlySet<string> = new Set([
 
 const HEX_6 = /^[0-9a-fA-F]{6}$/;
 
-/** Validate optional `shading` and `borders` arguments on `setParagraphFormat`. */
-export function paragraphVisualArgRefusal(shading: unknown, borders: unknown): string | null {
+/** Validate optional `shading`, `borders`, and `borderMode` arguments on `setParagraphFormat`. */
+export function paragraphVisualArgRefusal(
+  shading: unknown,
+  borders: unknown,
+  borderMode?: unknown
+): string | null {
+  if (borderMode !== undefined && borderMode !== 'replace' && borderMode !== 'merge') {
+    return "borderMode must be 'replace' or 'merge'";
+  }
   if (shading !== undefined && shading !== null) {
     if (typeof shading !== 'string' || !HEX_6.test(shading)) {
       return 'shading requires a six-digit hex RGB value like F1F5F9 or null';
@@ -128,18 +102,51 @@ export function paragraphVisualArgRefusal(shading: unknown, borders: unknown): s
   return null;
 }
 
-/** Build a `setTableProperties` op toggling the table's repeating header row on or off. */
-export function toggleHeaderRowOp(part: OoxmlPart, tableId: string): TreeDocOp | null {
+function isHeaderRowNode(row: OoxmlElement): boolean {
+  const trPr = wmlChildNamed(row, 'trPr');
+  const tblHeader = trPr ? wmlChildNamed(trPr, 'tblHeader') : undefined;
+  if (!tblHeader) return false;
+  const val = wmlAttributeValue(tblHeader, 'val')?.toLowerCase();
+  return val !== '0' && val !== 'false' && val !== 'off';
+}
+
+/** Count contiguous leading rows marked `w:tblHeader` (ECMA-376 §17.4.50). */
+export function tableHeaderRowCount(part: OoxmlPart, tableId: string): number {
+  const topology = readEditableTableTopology(part.root, tableId);
+  if (!topology.ok) return 0;
+  let count = 0;
+  for (const entry of topology.topology.rows) {
+    if (!isHeaderRowNode(entry.row)) break;
+    count += 1;
+  }
+  return count;
+}
+
+/** Build a `setTableProperties` op toggling repeating header row(s) on, extending, or off. */
+export function toggleHeaderRowOp(
+  part: OoxmlPart,
+  tableId: string,
+  rowId?: string
+): TreeDocOp | null {
   const topology = readEditableTableTopology(part.root, tableId);
   if (!topology.ok || topology.topology.rows.length === 0) return null;
-  const firstRow = topology.topology.rows[0]!.row;
-  const trPr = wmlChildNamed(firstRow, 'trPr');
-  const tblHeader = trPr ? wmlChildNamed(trPr, 'tblHeader') : null;
-  const val = tblHeader ? wmlAttributeValue(tblHeader, 'val')?.toLowerCase() : null;
-  const isHeader = tblHeader !== null && val !== '0' && val !== 'false' && val !== 'off';
+  const rows = topology.topology.rows;
+  const matchedIdx = rowId ? rows.findIndex((entry) => entry.row.id === rowId) : 0;
+  const rowIndex = matchedIdx >= 0 ? matchedIdx : 0;
+  const current = tableHeaderRowCount(part, tableId);
+  let nextHeaderRowCount: number;
+  if (current === 0) {
+    nextHeaderRowCount = 1;
+  } else if (rowIndex === current && current < rows.length) {
+    nextHeaderRowCount = current + 1;
+  } else if (rowIndex > 0 && rowIndex === current - 1) {
+    nextHeaderRowCount = current - 1;
+  } else {
+    nextHeaderRowCount = 0;
+  }
   return {
     op: 'setTableProperties',
     tableId,
-    headerRowCount: isHeader ? 0 : 1,
+    headerRowCount: nextHeaderRowCount,
   };
 }

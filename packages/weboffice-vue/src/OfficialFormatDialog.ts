@@ -110,7 +110,8 @@ export const OfficialFormatDialog = defineComponent({
     const marginBottomStr = ref(String(GB_T_9704_MARGINS_CM.bottom));
     const marginLeftStr = ref(String(GB_T_9704_MARGINS_CM.left));
     const marginRightStr = ref(String(GB_T_9704_MARGINS_CM.right));
-    const columnsCount = ref<1 | 2 | 3>(1);
+    const columnsCount = ref<number>(1);
+    const columnsCustomCount = ref<number | null>(null);
     const columnsSpaceStr = ref('0.75');
     const columnsSeparator = ref(false);
     const pageScope = ref<'document' | 'section'>('document');
@@ -122,7 +123,9 @@ export const OfficialFormatDialog = defineComponent({
       marginBottom: false,
       marginLeft: false,
       marginRight: false,
-      columns: false,
+      columnsCount: false,
+      columnsSpace: false,
+      columnsSep: false,
     });
 
     function resetDirty() {
@@ -140,7 +143,9 @@ export const OfficialFormatDialog = defineComponent({
       pageDirty.marginBottom = false;
       pageDirty.marginLeft = false;
       pageDirty.marginRight = false;
-      pageDirty.columns = false;
+      pageDirty.columnsCount = false;
+      pageDirty.columnsSpace = false;
+      pageDirty.columnsSep = false;
     }
 
     function seedFromEditor() {
@@ -229,10 +234,11 @@ export const OfficialFormatDialog = defineComponent({
         marginBottomStr.value = String(twipsToCm(ps.marginsTwips.bottom));
         marginLeftStr.value = String(twipsToCm(ps.marginsTwips.left));
         marginRightStr.value = String(twipsToCm(ps.marginsTwips.right));
-        const colCount = ps.columns?.count ?? 1;
-        columnsCount.value = colCount >= 3 ? 3 : colCount === 2 ? 2 : 1;
+        const colCount = Math.max(1, Math.min(12, Math.round(ps.columns?.count ?? 1)));
+        columnsCount.value = colCount;
+        columnsCustomCount.value = colCount > 3 ? colCount : null;
         columnsSpaceStr.value =
-          ps.columns && ps.columns.gapTwips > 0 ? String(twipsToCm(ps.columns.gapTwips)) : '0.75';
+          ps.columns !== undefined ? String(twipsToCm(ps.columns.gapTwips)) : '0.75';
         columnsSeparator.value = Boolean(ps.columns?.separator);
       }
     }
@@ -820,15 +826,22 @@ export const OfficialFormatDialog = defineComponent({
                             'data-testid': 'page-columns-count',
                             value: String(columnsCount.value),
                             onChange: (e: Event) => {
-                              const n = Number((e.target as HTMLSelectElement).value);
-                              columnsCount.value = n === 3 ? 3 : n === 2 ? 2 : 1;
-                              pageDirty.columns = true;
+                              const n = Math.round(Number((e.target as HTMLSelectElement).value));
+                              columnsCount.value = Number.isFinite(n) && n >= 1 && n <= 12 ? n : 1;
+                              pageDirty.columnsCount = true;
                             },
                           },
                           [
                             h('option', { value: '1' }, '一栏（默认）'),
                             h('option', { value: '2' }, '两栏'),
                             h('option', { value: '3' }, '三栏'),
+                            columnsCustomCount.value !== null
+                              ? h(
+                                  'option',
+                                  { value: String(columnsCustomCount.value) },
+                                  `自定义（${columnsCustomCount.value} 栏）`
+                                )
+                              : null,
                           ]
                         ),
                       ]),
@@ -847,7 +860,7 @@ export const OfficialFormatDialog = defineComponent({
                             value: columnsSpaceStr.value,
                             onInput: (e: Event) => {
                               columnsSpaceStr.value = (e.target as HTMLInputElement).value;
-                              pageDirty.columns = true;
+                              pageDirty.columnsSpace = true;
                             },
                           }),
                           h('span', { class: 'weboffice-dialog__unit' }, '厘米'),
@@ -863,7 +876,7 @@ export const OfficialFormatDialog = defineComponent({
                             checked: columnsSeparator.value,
                             onChange: (e: Event) => {
                               columnsSeparator.value = (e.target as HTMLInputElement).checked;
-                              pageDirty.columns = true;
+                              pageDirty.columnsSep = true;
                             },
                           }),
                           h('span', null, '在分栏间显示竖线'),

@@ -13,7 +13,7 @@ export interface PageSetupUpdate {
   readonly marginBottomTwips?: number;
   readonly marginLeftTwips?: number;
   readonly columns?: {
-    readonly count: number;
+    readonly count?: number;
     readonly spaceTwips?: number;
     readonly separator?: boolean;
   };

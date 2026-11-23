@@ -7,7 +7,8 @@
 // composition root.
 
 import type { TreeApplyResult, TreeDocxSessionView } from '@docx-editor.dev/core/binding';
-import { buildPresetListOps, writeFirstLineChars } from './paragraph-format-indent.ts';
+import { writeFirstLineChars } from './paragraph-format-indent.ts';
+import { buildPresetListOps, mergeParagraphBorderEdges } from './p1-list-helpers.ts';
 import {
   findNode,
   type OoxmlElement,
@@ -611,12 +612,16 @@ export function createSurfaceStructure(deps: SurfaceStructureDeps): StructureMet
       );
     },
 
-    toggleList(kind, preset) {
+    toggleList(kind, preset, restart) {
       const touched = targetParagraphs();
       if (touched === null || touched.length === 0) return false;
       const ops =
-        preset !== undefined
-          ? buildPresetListOps(touched, preset, {
+        preset !== undefined || restart
+          ? buildPresetListOps(touched, preset, Boolean(restart), {
+              numberingPart: session.currentPackage().parts.get('/word/numbering.xml'),
+              storyPart: storyPart(),
+              order: orderOf(),
+              markerOf,
               ensureListDefinition: (k, g, p) => session.ensureListDefinition(k, g, p),
               leaveOp: listNumbering.leaveOp,
             })
@@ -635,7 +640,7 @@ export function createSurfaceStructure(deps: SurfaceStructureDeps): StructureMet
               kind
             );
       if (ops === null) return false;
-      return commitOverTarget(() => applyOps(ops, selectionMark()));
+      return ops.length === 0 ? true : commitOverTarget(() => applyOps(ops, selectionMark()));
     },
 
     canAdjustIndent(direction) {
@@ -818,7 +823,11 @@ export function createSurfaceStructure(deps: SurfaceStructureDeps): StructureMet
           ops.push({ op: 'setParagraphProperties', paragraphId, properties });
         }
         if (wantsBorders) {
-          ops.push({ op: 'setParagraphBorders', paragraphId, edges: update.borders! });
+          const edges =
+            update.borderMode === 'merge'
+              ? mergeParagraphBorderEdges(storyPart(), paragraphId, update.borders!)
+              : update.borders!;
+          ops.push({ op: 'setParagraphBorders', paragraphId, edges });
         }
         if (wantsTabStops) {
           // What the editor SAW, so the op can tell an inherited stop from an authored

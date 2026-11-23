@@ -17,7 +17,10 @@ const CT = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const REL = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const OD = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument';
 
-function docx(bodyInner: string): Uint8Array {
+function docx(bodyInner: string, sectPrInner?: string): Uint8Array {
+  const sect =
+    sectPrInner ??
+    '<w:pgSz w:w="12500" w:h="17000"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/>';
   return zipSync({
     '[Content_Types].xml': strToU8(
       `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="${CT}">` +
@@ -36,7 +39,7 @@ function docx(bodyInner: string): Uint8Array {
     ),
     'word/document.xml': strToU8(
       `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="${W}"><w:body>${bodyInner}` +
-        `<w:sectPr><w:pgSz w:w="12500" w:h="17000"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/></w:sectPr>` +
+        `<w:sectPr>${sect}</w:sectPr>` +
         `</w:body></w:document>`
     ),
   });
@@ -105,6 +108,85 @@ describe('P1 Chinese official numbering', () => {
     expect(cleared.ok).toBe(true);
     expect(serializeOoxmlPart(surface.session.part())).not.toContain('<w:numPr>');
   });
+
+  test('reapplying same preset preserves numId/ilvl, joins adjacent list, preserves sublevels on switch, and restarts explicitly', () => {
+    const { editor, surface } = openEditor(
+      docx(
+        '<w:p><w:r><w:t>甲组首项</w:t></w:r></w:p>' +
+          '<w:p><w:r><w:t>甲组次项</w:t></w:r></w:p>' +
+          '<w:p><w:r><w:t>甲组末项</w:t></w:r></w:p>'
+      )
+    );
+    const readNumIds = () => {
+      const xml = serializeOoxmlPart(surface.session.part());
+      return [
+        ...xml.matchAll(/<w:numPr><w:ilvl w:val="(\d+)"\/><w:numId w:val="(\d+)"\/><\/w:numPr>/g),
+      ].map((m) => ({ ilvl: Number(m[1]), numId: m[2]! }));
+    };
+
+    editor.exec({ type: 'selectAll' });
+    expect(editor.exec({ type: 'toggleList', kind: 'ordered', preset: 'cn-heading1' }).ok).toBe(
+      true
+    );
+    const initial = readNumIds();
+    expect(initial.length).toBe(3);
+    expect(new Set(initial.map((x) => x.numId)).size).toBe(1);
+    const origNumId = initial[0]!.numId;
+
+    // 1. Reapplying same preset on middle paragraph preserves numId & level (no-op)
+    selectPara(surface, 1, 0, 0);
+    const reapply = editor.exec({ type: 'toggleList', kind: 'ordered', preset: 'cn-heading1' });
+    expect(reapply.ok).toBe(true);
+    expect(reapply.changed).toBe(false);
+    expect(readNumIds()).toEqual([
+      { ilvl: 0, numId: origNumId },
+      { ilvl: 0, numId: origNumId },
+      { ilvl: 0, numId: origNumId },
+    ]);
+
+    // 2. Clearing P2 then applying cn-heading1 rejoins adjacent list numId
+    expect(editor.exec({ type: 'toggleList', kind: 'ordered', preset: 'clear' }).ok).toBe(true);
+    expect(readNumIds().length).toBe(2);
+    expect(editor.exec({ type: 'toggleList', kind: 'ordered', preset: 'cn-heading1' }).ok).toBe(
+      true
+    );
+    expect(readNumIds()).toEqual([
+      { ilvl: 0, numId: origNumId },
+      { ilvl: 0, numId: origNumId },
+      { ilvl: 0, numId: origNumId },
+    ]);
+
+    // 3. Demote P2 to sublevel ilvl=1, reapply cn-heading1 across all 3 -> keeps numId & ilvl=1
+    selectPara(surface, 1, 0, 0);
+    expect(editor.exec({ type: 'adjustIndent', direction: 'increase' }).ok).toBe(true);
+    expect(readNumIds()[1]).toEqual({ ilvl: 1, numId: origNumId });
+    editor.exec({ type: 'selectAll' });
+    const reapplySub = editor.exec({ type: 'toggleList', kind: 'ordered', preset: 'cn-heading1' });
+    expect(reapplySub.ok).toBe(true);
+    expect(reapplySub.changed).toBe(false);
+    expect(readNumIds()).toEqual([
+      { ilvl: 0, numId: origNumId },
+      { ilvl: 1, numId: origNumId },
+      { ilvl: 0, numId: origNumId },
+    ]);
+
+    // 4. Switch preset to cn-decimal across all 3 -> single new numId preserving ilvl=[0, 1, 0]
+    expect(editor.exec({ type: 'toggleList', kind: 'ordered', preset: 'cn-decimal' }).ok).toBe(
+      true
+    );
+    const switched = readNumIds();
+    expect(switched.length).toBe(3);
+    expect(switched[0]!.numId).not.toBe(origNumId);
+    expect(new Set(switched.map((x) => x.numId)).size).toBe(1);
+    expect(switched.map((x) => x.ilvl)).toEqual([0, 1, 0]);
+
+    // 5. Explicit restart on P2 mints a fresh numId at ilvl=0
+    selectPara(surface, 1, 0, 0);
+    expect(editor.exec({ type: 'toggleList', kind: 'ordered', restart: true }).ok).toBe(true);
+    const restarted = readNumIds();
+    expect(restarted[1]!.numId).not.toBe(switched[0]!.numId);
+    expect(restarted[1]!.ilvl).toBe(0);
+  });
 });
 
 describe('P1 paragraph borders, shading, underline variants, character spacing, and columns', () => {
@@ -130,6 +212,44 @@ describe('P1 paragraph borders, shading, underline variants, character spacing, 
     const afterXml = serializeOoxmlPart(surface.session.part());
     expect(afterXml).not.toContain('<w:pBdr>');
     expect(afterXml).not.toContain('<w:shd');
+  });
+
+  test('setParagraphFormat borderMode merge updates only target edge and preserves existing box sides', () => {
+    const { editor, surface } = openEditor(docx('<w:p><w:r><w:t>既有外框段落</w:t></w:r></w:p>'));
+    selectPara(surface, 0, 0, 4);
+    const boxEdge = { val: 'single', sz: '6', space: '4', color: '64748B' };
+    expect(
+      editor.exec({
+        type: 'setParagraphFormat',
+        borderMode: 'replace',
+        borders: [
+          { edge: 'top', attributes: boxEdge },
+          { edge: 'left', attributes: boxEdge },
+          { edge: 'bottom', attributes: boxEdge },
+          { edge: 'right', attributes: boxEdge },
+        ],
+      }).ok
+    ).toBe(true);
+
+    expect(
+      editor.exec({
+        type: 'setParagraphFormat',
+        borderMode: 'merge',
+        borders: [
+          { edge: 'bottom', attributes: { val: 'single', sz: '18', space: '4', color: 'DC2626' } },
+        ],
+      }).ok
+    ).toBe(true);
+
+    const xml = serializeOoxmlPart(surface.session.part());
+    expect(xml).toContain('<w:top w:color="64748B" w:space="4" w:sz="6" w:val="single"/>');
+    expect(xml).toContain('<w:left w:color="64748B" w:space="4" w:sz="6" w:val="single"/>');
+    expect(xml).toContain('<w:bottom w:color="DC2626" w:space="4" w:sz="18" w:val="single"/>');
+    expect(xml).toContain('<w:right w:color="64748B" w:space="4" w:sz="6" w:val="single"/>');
+
+    expect(editor.exec({ type: 'undo' }).ok).toBe(true);
+    const undoneXml = serializeOoxmlPart(surface.session.part());
+    expect(undoneXml).toContain('<w:bottom w:color="64748B" w:space="4" w:sz="6" w:val="single"/>');
   });
 
   test('setMarkAttr writes underline line styles and character spacing', () => {
@@ -163,7 +283,9 @@ describe('P1 paragraph borders, shading, underline variants, character spacing, 
     const xml = serializeOoxmlPart(surface.session.part());
     expect(xml).toContain('w:w="12500"');
     expect(xml).toContain('w:h="17000"');
-    expect(xml).toContain('<w:cols w:num="2" w:sep="1" w:space="425"/>');
+    expect(xml).toContain('w:num="2"');
+    expect(xml).toContain('w:sep="1"');
+    expect(xml).toContain('w:space="425"');
     expect(editor.snapshot().pageSetup?.columns?.count).toBe(2);
     expect(editor.snapshot().pageSetup?.columns?.separator).toBe(true);
 
@@ -175,6 +297,106 @@ describe('P1 paragraph borders, shading, underline variants, character spacing, 
       }).ok
     ).toBe(true);
     expect(editor.snapshot().pageSetup?.columns?.count).toBe(1);
+  });
+
+  test('setPageSetup patches w:sep losslessly on unequal, zero-gap, and 4-column sections', () => {
+    const unequal = openEditor(
+      docx(
+        '<w:p><w:r><w:t>不等宽双栏</w:t></w:r></w:p>',
+        '<w:pgSz w:w="12500" w:h="17000"/>' +
+          '<w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/>' +
+          '<w:cols w:num="2" w:space="0" w:equalWidth="0">' +
+          '<w:col w:w="3000" w:space="400"/><w:col w:w="6900"/>' +
+          '</w:cols>'
+      )
+    );
+    expect(unequal.editor.snapshot().pageSetup?.columns).toEqual({
+      count: 2,
+      gapTwips: 0,
+      equalWidth: false,
+    });
+    expect(
+      unequal.editor.exec({
+        type: 'setPageSetup',
+        columns: { separator: true },
+        scope: 'section',
+      }).ok
+    ).toBe(true);
+    const unequalXml = serializeOoxmlPart(unequal.surface.session.part());
+    expect(unequalXml).toContain('w:equalWidth="0"');
+    expect(unequalXml).toContain('w:space="0"');
+    expect(unequalXml).toContain('w:sep="1"');
+    expect(unequalXml).toContain('<w:col w:space="400" w:w="3000"/>');
+    expect(unequalXml).toContain('<w:col w:w="6900"/>');
+    expect(unequalXml).toContain('w:w="12500"');
+
+    const fourCols = openEditor(
+      docx(
+        '<w:p><w:r><w:t>四栏零间距</w:t></w:r></w:p>',
+        '<w:pgSz w:w="12500" w:h="17000"/>' +
+          '<w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/>' +
+          '<w:cols w:num="4" w:space="0"/>'
+      )
+    );
+    expect(fourCols.editor.snapshot().pageSetup?.columns).toEqual({ count: 4, gapTwips: 0 });
+    expect(
+      fourCols.editor.exec({
+        type: 'setPageSetup',
+        columns: { separator: true },
+        scope: 'section',
+      }).ok
+    ).toBe(true);
+    const fourXml = serializeOoxmlPart(fourCols.surface.session.part());
+    expect(fourXml).toContain('w:num="4"');
+    expect(fourXml).toContain('w:space="0"');
+    expect(fourXml).toContain('w:sep="1"');
+  });
+
+  test('toggleHeaderRow works with w:cantSplit, multi-row headers, and live TableContext state', () => {
+    const { editor, surface } = openEditor(
+      docx(
+        '<w:tbl>' +
+          '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
+          '<w:tr><w:trPr><w:cantSplit/></w:trPr>' +
+          '<w:tc><w:p><w:r><w:t>表头1</w:t></w:r></w:p></w:tc>' +
+          '<w:tc><w:p><w:r><w:t>列2</w:t></w:r></w:p></w:tc></w:tr>' +
+          '<w:tr><w:tc><w:p><w:r><w:t>第二行</w:t></w:r></w:p></w:tc>' +
+          '<w:tc><w:p><w:r><w:t>数据2</w:t></w:r></w:p></w:tc></w:tr>' +
+          '<w:tr><w:tc><w:p><w:r><w:t>第三行</w:t></w:r></w:p></w:tc>' +
+          '<w:tc><w:p><w:r><w:t>数据3</w:t></w:r></w:p></w:tc></w:tr>' +
+          '</w:tbl>'
+      )
+    );
+    selectPara(surface, 0, 0, 0);
+    expect(editor.snapshot().table?.headerRowCount).toBeUndefined();
+    expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
+    let xml = serializeOoxmlPart(surface.session.part());
+    expect(xml).toContain('<w:cantSplit/>');
+    expect(xml).toContain('<w:tblHeader w:val="1"/>');
+    expect(editor.snapshot().table?.headerRowCount).toBe(1);
+    expect(editor.snapshot().table?.isHeaderRow).toBe(true);
+
+    // Move caret to row 1 and extend repeating header to [1, 2]
+    selectPara(surface, 2, 0, 0);
+    expect(editor.snapshot().table?.isHeaderRow).toBe(false);
+    expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
+    expect(editor.snapshot().table?.headerRowCount).toBe(2);
+    expect(editor.snapshot().table?.isHeaderRow).toBe(true);
+
+    // Move caret back to row 0: off ([1, 2] -> []) then on again ([] -> [1]), preserving cantSplit
+    selectPara(surface, 0, 0, 0);
+    expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
+    xml = serializeOoxmlPart(surface.session.part());
+    expect(xml).not.toContain('tblHeader');
+    expect(xml).toContain('<w:cantSplit/>');
+    expect(editor.snapshot().table?.headerRowCount).toBeUndefined();
+
+    expect(editor.exec({ type: 'toggleHeaderRow' }).ok).toBe(true);
+    xml = serializeOoxmlPart(surface.session.part());
+    expect(xml).toContain('<w:tblHeader w:val="1"/>');
+    expect(xml).toContain('<w:cantSplit/>');
+    expect(editor.snapshot().table?.headerRowCount).toBe(1);
+    expect(editor.snapshot().table?.isHeaderRow).toBe(true);
   });
 
   test('toggleHeaderRow toggles repeating header row on and off via setTableProperties', () => {

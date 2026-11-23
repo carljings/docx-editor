@@ -801,7 +801,7 @@ export function planTableCommand(input: TableCommandPlannerInput): TableCommandP
   switch (command.type) {
     case 'toggleHeaderRow': {
       if (!anchor) return refusal('unsupported', 'the selection is not inside a table');
-      const op = toggleHeaderRowOp(part, anchor.tableId);
+      const op = toggleHeaderRowOp(part, anchor.tableId, anchor.rowId);
       return op
         ? planValidated(part, [op], { kind: 'preserveSelection' })
         : refusal('unsupported', 'cannot toggle header row');

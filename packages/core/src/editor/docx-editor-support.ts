@@ -399,7 +399,11 @@ export function classifyCommand(command: EditorCommand): CommandSupport {
           };
         }
       }
-      const visualRefusal = paragraphVisualArgRefusal(command.shading, command.borders);
+      const visualRefusal = paragraphVisualArgRefusal(
+        command.shading,
+        command.borders,
+        command.borderMode
+      );
       if (visualRefusal) return { supported: false, code: 'invalidArgs', reason: visualRefusal };
       const line = command.lineSpacing;
       if (line !== undefined && line !== null) {
@@ -527,6 +531,13 @@ export function classifyCommand(command: EditorCommand): CommandSupport {
           supported: false,
           code: 'invalidArgs',
           reason: `list preset '${command.preset}' is not supported`,
+        };
+      }
+      if (command.restart !== undefined && typeof command.restart !== 'boolean') {
+        return {
+          supported: false,
+          code: 'invalidArgs',
+          reason: 'toggleList restart must be a boolean',
         };
       }
       return { supported: true, mutating: true };

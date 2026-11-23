@@ -116,7 +116,9 @@ export interface PageDraftInput {
     readonly marginBottom: boolean;
     readonly marginLeft: boolean;
     readonly marginRight: boolean;
-    readonly columns: boolean;
+    readonly columnsCount: boolean;
+    readonly columnsSpace: boolean;
+    readonly columnsSep: boolean;
   };
   readonly paperId: string;
   readonly customPaperSize: { readonly widthTwips: number; readonly heightTwips: number } | null;
@@ -125,7 +127,7 @@ export interface PageDraftInput {
   readonly marginBottomStr: string;
   readonly marginLeftStr: string;
   readonly marginRightStr: string;
-  readonly columnsCount: 1 | 2 | 3;
+  readonly columnsCount: number;
   readonly columnsSpaceStr: string;
   readonly columnsSeparator: boolean;
   readonly scope: 'document' | 'section';
@@ -187,18 +189,31 @@ export function buildPageSetupUpdate(input: PageDraftInput): {
     hasChanges = true;
   }
 
-  if (input.dirty.columns) {
-    const spaceCm = Number(input.columnsSpaceStr);
-    if (input.columnsCount > 1 && (!Number.isFinite(spaceCm) || spaceCm < 0 || spaceCm > 10)) {
-      return { update: pageUpdate, hasChanges: false, error: '请输入合法的栏间距（0 ~ 10 厘米）' };
+  if (input.dirty.columnsCount || input.dirty.columnsSpace || input.dirty.columnsSep) {
+    const columnsPatch: { count?: number; spaceTwips?: number; separator?: boolean } = {};
+    if (input.dirty.columnsCount) {
+      columnsPatch.count = input.columnsCount;
     }
-    pageUpdate.columns = {
-      count: input.columnsCount,
-      ...(input.columnsCount > 1
-        ? { spaceTwips: cmToTwips(spaceCm), separator: input.columnsSeparator }
-        : { separator: false }),
-    };
-    hasChanges = true;
+    if (input.dirty.columnsSpace && input.columnsCount > 1) {
+      const spaceCm = Number(input.columnsSpaceStr);
+      if (!Number.isFinite(spaceCm) || spaceCm < 0 || spaceCm > 10) {
+        return {
+          update: pageUpdate,
+          hasChanges: false,
+          error: '请输入合法的栏间距（0 ~ 10 厘米）',
+        };
+      }
+      columnsPatch.spaceTwips = cmToTwips(spaceCm);
+    }
+    if (input.dirty.columnsSep && input.columnsCount > 1) {
+      columnsPatch.separator = input.columnsSeparator;
+    } else if (input.dirty.columnsCount && input.columnsCount === 1) {
+      columnsPatch.separator = false;
+    }
+    if (Object.keys(columnsPatch).length > 0) {
+      pageUpdate.columns = columnsPatch;
+      hasChanges = true;
+    }
   }
 
   if (hasChanges) {

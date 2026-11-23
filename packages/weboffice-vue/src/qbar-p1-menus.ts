@@ -12,7 +12,34 @@ import {
 
 const keepFocus = (e: MouseEvent) => e.preventDefault();
 
-export function renderNumberingMenu(onPick: (preset: ToggleListPreset) => void): VNode {
+/** Clamp an open quick-bar popover horizontally inside the host & viewport bounds. */
+export function clampPopoverWithinViewport(
+  bar: HTMLElement | null,
+  host: HTMLElement | null
+): void {
+  if (!bar) return;
+  const pop = bar.querySelector<HTMLElement>(
+    '.weboffice-qbar__menu, .weboffice-qbar__table-grid, .weboffice-qbar__symbols-wrap'
+  );
+  if (!pop) return;
+  pop.style.transform = '';
+  const rect = pop.getBoundingClientRect();
+  const hostRect = host?.getBoundingClientRect();
+  const minLeft = Math.max(8, hostRect ? Math.ceil(hostRect.left) + 8 : 8);
+  const maxRight = Math.min(
+    window.innerWidth - 8,
+    hostRect ? Math.floor(hostRect.right) - 8 : window.innerWidth - 8
+  );
+  let dx = 0;
+  if (rect.right > maxRight) dx -= rect.right - maxRight;
+  if (rect.left + dx < minLeft) dx += minLeft - (rect.left + dx);
+  if (Math.abs(dx) > 0.5) pop.style.transform = `translateX(${Math.round(dx)}px)`;
+}
+
+export function renderNumberingMenu(
+  onPick: (preset: ToggleListPreset) => void,
+  onRestart: () => void
+): VNode {
   return h('div', { class: 'weboffice-qbar__menu weboffice-qbar__menu--num' }, [
     h('div', { class: 'weboffice-qbar__section-title' }, '中文公文编号（GB/T 9704）'),
     ...CN_NUMBERING_PRESETS.map((item) =>
@@ -38,6 +65,17 @@ export function renderNumberingMenu(onPick: (preset: ToggleListPreset) => void):
       {
         type: 'button',
         class: 'weboffice-qbar__menu-item',
+        'data-testid': 'num-cn-restart',
+        onMousedown: keepFocus,
+        onClick: onRestart,
+      },
+      '重新开始编号'
+    ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'weboffice-qbar__menu-item',
         'data-testid': 'num-cn-clear',
         onMousedown: keepFocus,
         onClick: () => onPick('clear'),
@@ -48,7 +86,11 @@ export function renderNumberingMenu(onPick: (preset: ToggleListPreset) => void):
 }
 
 export function renderBordersMenu(opts: {
-  onApplyBorder: (edges: readonly ParagraphBorderEdgeWrite[], label: string) => void;
+  onApplyBorder: (
+    edges: readonly ParagraphBorderEdgeWrite[],
+    label: string,
+    mode: 'merge' | 'replace'
+  ) => void;
   onApplyShading: (hex: string | null, label: string) => void;
 }): VNode {
   return h('div', { class: 'weboffice-qbar__menu weboffice-qbar__menu--borders' }, [
@@ -62,7 +104,7 @@ export function renderBordersMenu(opts: {
           class: 'weboffice-qbar__menu-item weboffice-qbar__border-item',
           'data-testid': item.testId,
           onMousedown: keepFocus,
-          onClick: () => opts.onApplyBorder(item.edges, item.label),
+          onClick: () => opts.onApplyBorder(item.edges, item.label, item.mode),
         },
         [
           h('span', { class: ['weboffice-qbar__border-preview', item.previewClass] }),
@@ -183,6 +225,7 @@ export function renderTextEffectsMenu(opts: {
 export function renderTableContextSection(opts: {
   canMerge: boolean;
   isHeaderRow: boolean;
+  headerRowCount: number;
   onAction: (
     action:
       | 'mergeCells'
@@ -199,7 +242,14 @@ export function renderTableContextSection(opts: {
     label: string,
     testId: string,
     action: Parameters<typeof opts.onAction>[0],
-    extra: { disabled?: boolean; active?: boolean; danger?: boolean } = {}
+    extra: {
+      disabled?: boolean;
+      active?: boolean;
+      pressed?: boolean;
+      danger?: boolean;
+      title?: string;
+      headerRows?: number;
+    } = {}
   ) =>
     h(
       'button',
@@ -211,6 +261,9 @@ export function renderTableContextSection(opts: {
           extra.danger ? 'is-danger' : '',
         ],
         'data-testid': testId,
+        'aria-pressed': extra.pressed !== undefined ? String(extra.pressed) : undefined,
+        'data-header-rows': extra.headerRows !== undefined ? String(extra.headerRows) : undefined,
+        title: extra.title,
         disabled: extra.disabled,
         onMousedown: keepFocus,
         onClick: () => opts.onAction(action),
@@ -218,11 +271,21 @@ export function renderTableContextSection(opts: {
       label
     );
 
+  const headerTitle =
+    opts.headerRowCount > 0
+      ? `当前前 ${opts.headerRowCount} 行为重复表头行，点击切换`
+      : '开启首行跨页重复表头';
+
   return h('div', { class: 'weboffice-qbar__table-ctx', 'data-testid': 'table-ctx-actions' }, [
     h('div', { class: 'weboffice-qbar__section-title' }, '当前表格操作'),
     h('div', { class: 'weboffice-qbar__table-ctx-grid' }, [
       btn('合并单元格', 'table-ctx-merge', 'mergeCells', { disabled: !opts.canMerge }),
-      btn('重复表头行', 'table-ctx-header-row', 'toggleHeaderRow', { active: opts.isHeaderRow }),
+      btn('重复表头行', 'table-ctx-header-row', 'toggleHeaderRow', {
+        active: opts.isHeaderRow,
+        pressed: opts.isHeaderRow,
+        headerRows: opts.headerRowCount,
+        title: headerTitle,
+      }),
       btn('上方插行', 'table-ctx-row-above', 'rowAbove'),
       btn('下方插行', 'table-ctx-row-below', 'rowBelow'),
       btn('左侧插列', 'table-ctx-col-left', 'colLeft'),
